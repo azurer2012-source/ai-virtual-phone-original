@@ -1,4 +1,5 @@
 import { kvGet, kvSet, registerKvMigration } from "../kv-db";
+import { isPublicCloudKey } from "./public-key";
 
 /** Fixed bucket name — users never type this; the app auto-creates it via the service_role key. */
 export const CLOUD_BACKUP_BUCKET = "ai-phone-backup";
@@ -7,9 +8,14 @@ const CLOUD_BACKUP_CONFIG_KEY = "ai_phone_cloud_backup_config_v1";
 registerKvMigration(CLOUD_BACKUP_CONFIG_KEY);
 
 export type CloudBackupConfig = {
+  /** Email mode uses a public project key plus a separate short-lived user session. */
+  authMode?: "email";
+  /** Device-local preferences; config is excluded from all backups. */
+  rememberLogin?: boolean;
+  email?: string;
   /** User's Supabase project URL, e.g. https://xxxx.supabase.co */
   url: string;
-  /** User's Supabase service_role key (needed to auto-create the bucket). */
+  /** Public key in email mode; privileged keys exist only in legacy configs. */
   key: string;
   /** Auto-backup on/off (engine wired in a later step). */
   enabled: boolean;
@@ -47,6 +53,9 @@ export function loadCloudBackupConfig(): CloudBackupConfig {
     if (!raw) return { ...DEFAULT_CLOUD_BACKUP_CONFIG };
     const parsed = JSON.parse(raw) as Partial<CloudBackupConfig>;
     return {
+      authMode: parsed.authMode === "email" ? "email" : undefined,
+      rememberLogin: parsed.rememberLogin !== false,
+      email: typeof parsed.email === "string" ? parsed.email : "",
       url: typeof parsed.url === "string" ? parsed.url : "",
       key: typeof parsed.key === "string" ? parsed.key : "",
       enabled: Boolean(parsed.enabled),
@@ -62,6 +71,9 @@ export function loadCloudBackupConfig(): CloudBackupConfig {
 }
 
 export function saveCloudBackupConfig(config: CloudBackupConfig): void {
+  if (config.authMode === "email" && !isPublicCloudKey(config.key.trim())) {
+    throw new Error("邮箱连接只能保存项目公钥。");
+  }
   kvSet(CLOUD_BACKUP_CONFIG_KEY, JSON.stringify({
     ...config,
     url: normalizeBackupUrl(config.url),

@@ -349,7 +349,7 @@ export function saveWeixinCloudSyncConfig(config: WeixinCloudSyncConfig): void {
 }
 
 export function isWeixinCloudSupabaseReady(config: CloudBackupConfig = loadCloudBackupConfig()): boolean {
-  return isCloudBackupConfigured(config);
+  return config.authMode !== "email" && isCloudBackupConfigured(config);
 }
 
 // ---- 微信云端助手（Supabase Edge Function 托管自动回复） ----
@@ -375,6 +375,7 @@ export type WeixinCloudAssistantHeartbeat = {
 
 function requireCloudBackupConfig(): CloudBackupConfig {
   const config = loadCloudBackupConfig();
+  if (config.authMode === "email") throw new Error("邮箱云备份尚不支持微信云助手。");
   if (!isCloudBackupConfigured(config)) {
     throw new Error("请先在数据管理里配置 Supabase 云端备份。");
   }
@@ -595,7 +596,7 @@ export function buildWeixinLocalAssistantConfigCode(
   options?: { pollIntervalSeconds?: number },
 ): string {
   const cloudConfig = loadCloudBackupConfig();
-  if (!isCloudBackupConfigured(cloudConfig)) {
+  if (cloudConfig.authMode === "email" || !isCloudBackupConfigured(cloudConfig)) {
     throw new Error("请先在数据管理里配置 Supabase 云端备份。");
   }
   const payload: WeixinLocalAssistantConfig = {
@@ -1021,7 +1022,7 @@ export async function syncWeixinBotRuntimeToCloud(
   options?: { cloudConfig?: CloudBackupConfig; messageLimit?: number },
 ): Promise<WeixinCloudSyncResult> {
   const cloudConfig = options?.cloudConfig ?? loadCloudBackupConfig();
-  if (!isCloudBackupConfigured(cloudConfig)) {
+  if (cloudConfig.authMode === "email" || !isCloudBackupConfigured(cloudConfig)) {
     throw new Error("请先在数据管理里配置 Supabase 云端备份。");
   }
 
@@ -1278,7 +1279,7 @@ export async function pullWeixinCloudMessagesFromCloud(
 ): Promise<WeixinCloudMessagePullResult> {
   await Promise.all([hydrateChatStorage(), ensureSettingsStorageHydrated()]);
   const cloudConfig = options?.cloudConfig ?? loadCloudBackupConfig();
-  if (!isCloudBackupConfigured(cloudConfig)) {
+  if (cloudConfig.authMode === "email" || !isCloudBackupConfigured(cloudConfig)) {
     throw new Error("请先在数据管理里配置 Supabase 云端备份。");
   }
 

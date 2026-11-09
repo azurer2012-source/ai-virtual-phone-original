@@ -809,13 +809,13 @@ export function DataManagement({ onNotice }: DataManagementProps) {
           <div className="data-cloud-form">
             <div className="flex items-center gap-3">
               <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${isCloudBackupConfigured(cloudConfig) ? "bg-green-500" : "bg-black/20"}`} />
-              <span className="menu-label flex-1">{isCloudBackupConfigured(cloudConfig) ? "已部署" : "未部署"}</span>
+              <span className="menu-label flex-1">{isCloudBackupConfigured(cloudConfig) ? "连接已配置" : "未配置"}</span>
               <button
                 type="button"
                 className="ui-btn ui-btn-outline shrink-0 py-1 px-3 ts-12"
                 onClick={() => window.dispatchEvent(new CustomEvent("settings-navigate", { detail: { page: "cloud" } }))}
               >
-                {isCloudBackupConfigured(cloudConfig) ? "重新部署" : "去部署"}
+                {"邮箱登录"}
               </button>
             </div>
 

@@ -74,6 +74,7 @@ export function isPersonalPushCloudActive(): boolean {
   const backup = loadCloudBackupConfig();
   return Boolean(
     state
+    && backup.authMode !== "email"
     && isCloudBackupConfigured(backup)
     && state.projectRef === projectRefFromUrl(backup.url)
     && state.url === normalizeBackupUrl(backup.url),
@@ -197,7 +198,7 @@ export type PersonalPushConnectOutcome =
  */
 export async function connectPersonalPushCloud(): Promise<PersonalPushConnectOutcome> {
   const backup = loadCloudBackupConfig();
-  if (!isCloudBackupConfigured(backup)) {
+  if (backup.authMode === "email" || !isCloudBackupConfigured(backup)) {
     throw new Error("请先填写并测试 Supabase 地址与 service_role key。");
   }
   const url = normalizeBackupUrl(backup.url);
@@ -246,7 +247,7 @@ export async function connectPersonalPushCloud(): Promise<PersonalPushConnectOut
 
 export async function deployPersonalPushCloud(accessToken: string): Promise<PersonalPushCloudState> {
   const backup = loadCloudBackupConfig();
-  if (!isCloudBackupConfigured(backup)) {
+  if (backup.authMode === "email" || !isCloudBackupConfigured(backup)) {
     throw new Error("请先在数据管理里配置并测试 Supabase 云端备份。");
   }
   const token = accessToken.trim();

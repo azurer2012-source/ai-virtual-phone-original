@@ -394,7 +394,7 @@ export const DATA_MODULES: DataModuleDefinition[] = [
         excludeKeys: [...ownedKvKeys, ...KV_BACKUP_EXCLUDED_KEYS],
         excludePrefixes: ownedKvPrefixes,
       },
-      { type: "localStorage", label: "浏览器遗留缓存", includeAll: true, excludeKeys: RESERVED_LOCAL_STORAGE_KEYS },
+      { type: "localStorage", label: "浏览器遗留缓存", includeAll: true, excludeKeys: RESERVED_LOCAL_STORAGE_KEYS, excludePrefixes: ["ai-phone-cloud-auth:"] },
     ],
   },
 ];
