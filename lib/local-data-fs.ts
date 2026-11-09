@@ -114,6 +114,8 @@ function matchesKey(key: string, source: {
     excludeKeys?: string[];
     excludePrefixes?: string[];
 }): boolean {
+    // Favorites are private to the user. Keep them in backups, never in role tools.
+    if (key === "ai_phone_chat_favorites_v1") return false;
     if (source.excludeKeys?.includes(key)) return false;
     if (source.excludePrefixes?.some(prefix => key.startsWith(prefix))) return false;
     if (source.includeAll) return true;

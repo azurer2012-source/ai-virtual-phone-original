@@ -3898,3 +3898,18 @@
 @keyframes diary-generating-spin {
   to { transform: rotate(360deg); }
 }
+
+.chat-favorite-content h1, .chat-favorite-content h2, .chat-favorite-content h3, .chat-favorite-content h4 { font-size: 1.05em; line-height: inherit; margin: 0.75em 0 0.35em; }
+.chat-favorite-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.95em; }
+.chat-favorite-content table { display: block; max-width: 100%; overflow-x: auto; }
+
+/* Favorites have independent sizes: diary font scaling must not enlarge them. */
+.chat-favorites-app .diary-book-label strong { font-size: 14px; line-height: 1.35; white-space: normal; overflow-wrap: anywhere; }
+.chat-favorites-app .diary-book-label em { font-size: 10px; letter-spacing: 0.12em; }
+.chat-favorites-app .diary-book-meta { font-size: 10px; }
+.chat-favorites-app .diary-entry-card { --diary-entry-font-scale: 1; }
+.chat-favorites-app .diary-entry-card strong { font-size: 14px; line-height: 1.5; margin: 12px 0 8px; }
+.chat-favorites-app .diary-entry-card-text { font-size: 14px; line-height: 1.7; min-height: 0; }
+.chat-favorites-app .diary-entry-card-kicker { font-size: 10px; }
+.chat-favorites-app .diary-entry-card-meta { font-size: 10px; white-space: normal; }
+.chat-favorites-app .diary-entry-main h2 { font-size: 14px; line-height: 1.5; }

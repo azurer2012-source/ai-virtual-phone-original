@@ -4,6 +4,7 @@ import { forwardRef, Fragment, memo, useCallback, useEffect, useImperativeHandle
 import { ChatSession, ChatMessage, CHAT_APP_SETTINGS_UPDATED_EVENT, CHAT_INITIAL_VISIBLE_MESSAGE_COUNT, CHAT_LOAD_MORE_MESSAGE_COUNT, CHAT_REQUEST_REPLY_EVENT, loadChatAppSettings, loadChatMessages, loadChatContacts, loadChatSessions, saveChatSessions, pushChatMessage, updateChatMessage, deleteChatMessage, deleteChatMessagesFrom, deleteChatMessagesByIds, retractChatMessage, editChatMessage, updateMessageMediaData, replaceResponseBatchWithParts, replaceGroupResponseRound, isReadingDiscussMessage, isSystemInstructionMessage, createResponseBatchId, createResponseRoundId, getLatestStateValues, getLatestCharacterStateValues, compareChatMessages, isSessionStreamingEnabled } from "@/lib/chat-storage";
 import { cleanStreamText, splitStreamPreviewSegments, stripLiteralTexts, stripXmlTagBlocks } from "@/lib/stream-preview";
 import type { StateValue } from "@/lib/chat-storage";
+import { addChatFavorite, type FavoriteMessage } from "@/lib/chat-favorites";
 import { parseStateValues, mergeStateValues } from "@/lib/state-value-parser";
 import { parseAIResponse, type ParsedMessagePart } from "@/lib/rich-message-parser";
 import { isKnownStickerLabel } from "@/lib/sticker-data";
@@ -1282,6 +1283,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [contextMenuAnchor, setContextMenuAnchor] = useState<ContextMenuAnchor | null>(null);
     const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
     const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+    const [offlineFavoriteSelection, setOfflineFavoriteSelection] = useState<Set<string> | null>(null);
+    useEffect(() => { setOfflineFavoriteSelection(null); }, [session.id, offlineMode]);
     const [showConfirmMultiDelete, setShowConfirmMultiDelete] = useState(false);
     const [expandedMonologueId, setExpandedThinkingId] = useState<string | null>(null);
     // 思维链底部弹窗：存当前查看的 reasoning 文本，null = 关闭
@@ -4847,6 +4850,20 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         });
     };
 
+    const favoriteSnapshot = (m: ChatMessage): FavoriteMessage => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt, mediaType: m.mediaType, mediaData: m.mediaData, mediaUrl: m.mediaUrl, senderName: m.role === "user" ? (userIdentity?.name || "你") : (m.senderName || character?.name || "对方") });
+    const offlineFavoriteSnapshot = (turn: ChatOfflineTurn, role: OfflineActionTarget["role"]): FavoriteMessage => ({ id: `${turn.id}:${role}`, role, content: role === "user" ? getOfflineDisplayText(turn).userContent : getOfflineDisplayText(turn).assistantContent, createdAt: turn.createdAt, senderName: role === "user" ? (userIdentity?.name || "你") : (session.isGroup ? session.groupName || "群聊" : character?.name || "对方") });
+    const saveFavorite = async (messages: FavoriteMessage[], mode: "online" | "offline") => {
+        try {
+            await addChatFavorite({ sessionId: session.id, folderId: session.isGroup ? `group:${session.id}` : `character:${session.contactId}`, title: session.groupName || character?.name || "聊天收藏", mode, messages });
+            showChatToast("已收藏到手记");
+            setActiveMessageId(null); setActiveOfflineTarget(null);
+            setOfflineFavoriteSelection(null); setIsMultiSelectMode(false); setSelectedMessageIds(new Set());
+        } catch { showChatToast("收藏失败，请重试"); }
+    };
+    const toggleOfflineFavorite = (key: string) => setOfflineFavoriteSelection(previous => {
+        if (!previous) return previous;
+        const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next;
+    });
     const renderOfflineContextMenu = (turn: ChatOfflineTurn, role: OfflineActionTarget["role"]) => {
         const menu = (
             <div
@@ -4862,6 +4879,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     <button onClick={() => void handleOfflineRetryFrom(turn.id)} className="ctx-menu-btn ctx-menu-btn-danger">重试以下</button>
                 </div>
                 <div className="flex">
+                    <button onClick={() => void saveFavorite([offlineFavoriteSnapshot(turn, role)], "offline")} className="ctx-menu-btn">收藏</button>
+                    <button onClick={() => { setOfflineFavoriteSelection(new Set([`${turn.id}:${role}`])); setActiveOfflineTarget(null); }} className="ctx-menu-btn">多选</button>
                     <button onClick={() => handleOfflineDeleteTurn(turn.id)} className="ctx-menu-btn ctx-menu-btn-danger">删除</button>
                     <button onClick={() => handleOfflineDeleteTurnsFrom(turn.id)} className="ctx-menu-btn ctx-menu-btn-danger">删除以下</button>
                 </div>
@@ -4920,6 +4939,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 </div>
                 <div className="flex">
                     <button onClick={() => { setQuotingMessage(m); setActiveMessageId(null); }} className="ctx-menu-btn">引用</button>
+                    <button onClick={() => void saveFavorite([favoriteSnapshot(m)], "online")} className="ctx-menu-btn">收藏</button>
                     {options?.allowMultiSelect !== false && (
                         <button onClick={() => startMultiSelectFromMessage(m)} className="ctx-menu-btn">多选</button>
                     )}
@@ -4951,7 +4971,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         return wrapperRef.current ? createPortal(menu, wrapperRef.current) : menu;
     };
 
-    const renderDeleteOnlyContextMenu = (onDelete: () => void, onMultiSelect?: () => void) => {
+    const renderDeleteOnlyContextMenu = (onDelete: () => void, onMultiSelect?: () => void, favoriteMessage?: ChatMessage) => {
         const menu = (
             <div
                 onPointerDown={e => e.stopPropagation()}
@@ -4959,6 +4979,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 style={getContextMenuInitialStyle()}
                 className="ctx-menu chat-floating-ctx-menu flex py-[6px] px-0"
             >
+                {favoriteMessage && <button className="ctx-menu-btn" onClick={() => void saveFavorite([favoriteSnapshot(favoriteMessage)], "online")}>收藏</button>}
                 {onMultiSelect && (
                     <button
                         onClick={(e) => {
@@ -5497,9 +5518,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                         {userIdentity?.avatarUrl ? <img src={userIdentity.avatarUrl} alt="" /> : <User size={18} color="var(--c-text)" />}
                                     </div>
                                     <div className="chat-offline-label">你</div>
+ {offlineFavoriteSelection && <label><input type="checkbox" aria-label="选择用户消息" checked={offlineFavoriteSelection.has(`${turn.id}:user`)} onChange={() => toggleOfflineFavorite(`${turn.id}:user`)} />选择</label>}
                                     <div
                                         className="chat-offline-text"
-                                        onPointerDown={(e) => { e.stopPropagation(); handleOfflinePointerDown(e, { turnId: turn.id, role: "user" }); }}
+                                        onPointerDown={(e) => { e.stopPropagation(); if (offlineFavoriteSelection) return; handleOfflinePointerDown(e, { turnId: turn.id, role: "user" }); }}
                                         onPointerUp={(e) => handleMessagePointerUp(e)}
                                         onPointerCancel={handleMessagePointerCancel}
                                         onPointerLeave={handleMessagePointerCancel}
@@ -5528,6 +5550,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                     </div>
                                     <div className="chat-offline-label-row">
                                         <div className="chat-offline-label">{session.isGroup ? (session.groupName || "群聊") : (character?.name || "对方")}</div>
+                                        {offlineFavoriteSelection && <label><input type="checkbox" aria-label="选择角色消息" checked={offlineFavoriteSelection.has(`${turn.id}:assistant`)} onChange={() => toggleOfflineFavorite(`${turn.id}:assistant`)} />选择</label>}
                                         {assistantHasHtmlPreview ? (
                                             <button
                                                 type="button"
@@ -5567,7 +5590,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                     )}
                                     <div
                                         className="chat-offline-text"
-                                        onPointerDown={(e) => { e.stopPropagation(); handleOfflinePointerDown(e, { turnId: turn.id, role: "assistant" }); }}
+                                        onPointerDown={(e) => { e.stopPropagation(); if (offlineFavoriteSelection) return; handleOfflinePointerDown(e, { turnId: turn.id, role: "assistant" }); }}
                                         onPointerUp={(e) => handleMessagePointerUp(e)}
                                         onPointerCancel={handleMessagePointerCancel}
                                         onPointerLeave={handleMessagePointerCancel}
@@ -5734,7 +5757,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                         {...(activeMessageId === gMsg.id ? { "data-active": "" } : {})}
                                                     >
                                                         {formatSysMsgForUI(gMsg.content, gMsg)}
-                                                        {activeMessageId === gMsg.id && renderDeleteOnlyContextMenu(() => handleDeleteMessage(getStoredActionMessageId(gMsg)))}
+                                                        {activeMessageId === gMsg.id && renderDeleteOnlyContextMenu(() => handleDeleteMessage(getStoredActionMessageId(gMsg)), undefined, gMsg)}
                                                     </div>
                                                 </div>
                                             ) : (
@@ -5924,7 +5947,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                         {...(activeMessageId === msg.id ? { "data-active": "" } : {})}
                                     >
                                         {msg.role === "user" ? "你" : (character?.name || "对方")}撤回了一条消息
-                                        {activeMessageId === msg.id && renderDeleteOnlyContextMenu(() => handleDeleteMessage(getStoredActionMessageId(msg)), () => startMultiSelectFromMessage(msg))}
+                                        {activeMessageId === msg.id && renderDeleteOnlyContextMenu(() => handleDeleteMessage(getStoredActionMessageId(msg)), () => startMultiSelectFromMessage(msg), msg)}
                                     </div>
                                 ) : (
                                     <>
@@ -5955,7 +5978,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                                     {...(activeMessageId === msg.id ? { "data-active": "" } : {})}
                                                 >
                                                     <span className="chat-monologue-heart ts-18 leading-none inline-block" {...(expandedMonologueId === msg.id ? { "data-active": "" } : {})}><svg viewBox="0 0 16 16" width="18" height="18" style={{display:"block"}}><path d="M8 14s-6-4-6-8c0-2.5 1.5-4 3.5-4 1 0 2 .5 2.5 1.5C8.5 2.5 9.5 2 10.5 2 12.5 2 14 3.5 14 6c0 4-6 8-6 8z" fill="currentColor"/></svg></span>
-                                                    {activeMessageId === msg.id && renderDeleteOnlyContextMenu(() => handleDeleteMessage(getStoredActionMessageId(msg)), () => startMultiSelectFromMessage(msg))}
+                                                    {activeMessageId === msg.id && renderDeleteOnlyContextMenu(() => handleDeleteMessage(getStoredActionMessageId(msg)), () => startMultiSelectFromMessage(msg), msg)}
                                                 </div>
                                             ) : (
                                                 <div className="chat-msg-avatar flex flex-col items-center gap-1 shrink-0">
@@ -6178,6 +6201,11 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             </div>
 
             {/* Input Bar — absolute at bottom, same layer as header */}
+            {offlineMode && offlineFavoriteSelection && <div className="chat-multi-select-bar chat-room-main-pane" data-ui="multi-select">
+                <button className="chat-multi-select-icon-btn" aria-label="退出多选" onClick={() => setOfflineFavoriteSelection(null)}><X size={20} /></button>
+                <strong>已选 {offlineFavoriteSelection.size} 条</strong>
+                <button className="ui-btn" disabled={!offlineFavoriteSelection.size} onClick={() => void saveFavorite(offlineTurns.flatMap(turn => (["user", "assistant"] as const).filter(role => offlineFavoriteSelection.has(`${turn.id}:${role}`)).map(role => offlineFavoriteSnapshot(turn, role))), "offline")}>收藏</button>
+            </div>}
             {isMultiSelectMode && !offlineMode && (
                 <div className="chat-multi-select-bar chat-room-main-pane" data-ui="multi-select">
                     <button
@@ -6197,6 +6225,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 : `实际删除 ${multiDeleteTargetIds.length} 条`}
                         </span>
                     </div>
+                    <button className="ui-btn" disabled={!selectedMessageIds.size} onClick={() => void saveFavorite(loadChatMessages(session.id).filter(message => selectedMessageIds.has(message.id)).sort(compareChatMessages).map(favoriteSnapshot), "online")}>收藏</button>
                     <button
                         type="button"
                         className="chat-multi-select-delete-btn"
@@ -6208,7 +6237,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     </button>
                 </div>
             )}
-            {!isMultiSelectMode && (offlineMode ? (
+            {!isMultiSelectMode && !offlineFavoriteSelection && (offlineMode ? (
                 <OfflineTextInputBar
                     key={session.id}
                     ref={offlineTextInputRef}
