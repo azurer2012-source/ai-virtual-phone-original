@@ -1259,6 +1259,14 @@ export function DebugPromptPanel() {
                             {activeChatSnapshot.requestStats && <>
                                 <div>完整请求 JSON：{activeChatSnapshot.requestStats.requestJsonChars.toLocaleString()} 字符；消息：{activeChatSnapshot.requestStats.messagesJsonChars.toLocaleString()}；独立系统字段：{activeChatSnapshot.requestStats.systemJsonChars.toLocaleString()}</div>
                                 <div>工具定义：{activeChatSnapshot.requestStats.toolsJsonChars.toLocaleString()} 字符；其他字段：{activeChatSnapshot.requestStats.otherJsonChars.toLocaleString()}。含 JSON 结构，各项不严格相加；非模型计费 token。</div>
+                                <details><summary>按消息角色统计</summary>
+                                    {Object.entries(activeChatSnapshot.requestStats.roleDetails ?? {}).map(([role, row]) => <div key={role}>{role}：{row.count} 条，{row.jsonChars.toLocaleString()} JSON 字符</div>)}
+                                    <div>system 可能混合设定、事件和记忆；此处不能据角色单独认定为短期记忆。</div>
+                                </details>
+                                <details><summary>工具定义明细（按长度排序）</summary>
+                                    {(activeChatSnapshot.requestStats.toolDetails ?? []).map((tool, index) => <div key={`${index}-${tool.name}`}>{tool.name}：{tool.jsonChars.toLocaleString()} JSON 字符；说明 {tool.descriptionChars.toLocaleString()}；参数结构 {tool.schemaJsonChars.toLocaleString()}</div>)}
+                                    <div>仅统计名称与长度，不保存参数值或工具结果正文。</div>
+                                </details>
                             </>}
                         </div>
                     )}
