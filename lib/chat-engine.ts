@@ -2,6 +2,7 @@
 
 import { createSseJsonParser } from "./sse-json";
 import { measurePromptRequest } from "./prompt-request-stats";
+import { isOmbreToolset, isCoreMemoryTool } from "./memory-tool-loading";
 import { maybeAppendShortcutCapability } from "./offline-shortcut-capability";
 import { loadCharacters } from "./character-storage";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
@@ -531,7 +532,7 @@ export function publishDebugPromptSnapshot(params: {
     const { request, config, preset, meta, options, requestKind, tools } = params;
     const snapshot: DebugPromptSnapshot = {
         origin: params.origin ?? "request",
-        requestStats: measurePromptRequest(request.body),
+        requestStats: measurePromptRequest(request.body, request.messagesForLog),
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         timestamp: new Date().toISOString(),
         requestKind,
@@ -1541,6 +1542,7 @@ export type NativeChatToolBundle = {
 };
 
 type NativeChatToolBuildOptions = {
+    compactMemoryTools?: boolean;
     actorNames?: string[];
     characterName?: string;
     userName?: string;
@@ -1734,7 +1736,8 @@ export function buildNativeChatTools(enabledTools: EnabledTool[], expandedSource
 
     for (const tool of enabledTools) {
         const sourceKey = nativeToolSourceKey(tool);
-        if (isNativeSingleTool(tool) || !expanded.has(sourceKey)) continue;
+        const compactMemory = options?.compactMemoryTools === true && tool.source === "mcp_server" && isOmbreToolset(tool.mcpTools || []);
+        if (isNativeSingleTool(tool) || (!expanded.has(sourceKey) && !compactMemory)) continue;
 
         if (tool.source === "rest_package") {
             for (const restTool of tool.restTools || []) {
@@ -1752,6 +1755,7 @@ export function buildNativeChatTools(enabledTools: EnabledTool[], expandedSource
 
         if (tool.source === "mcp_server") {
             for (const mcpTool of tool.mcpTools || []) {
+                if (compactMemory && !isCoreMemoryTool(mcpTool.name)) continue;
                 registerTool(mcpTool.name, mcpTool.description || tool.description, mcpTool.inputSchema || {}, sourceKey);
             }
             continue;
@@ -2172,7 +2176,7 @@ async function generateNativeChatCompletion(
         characterName: character.name,
         userName: userIdentity?.name ?? "用户",
     };
-    let nativeBundle = buildNativeChatTools(enabledTools, expandedSourceIds, nativeToolBuildOptions);
+    let nativeBundle = buildNativeChatTools(enabledTools, expandedSourceIds, { ...nativeToolBuildOptions, compactMemoryTools: true });
     const requestMessages: LlmRequestMessage[] = toLlmRequestMessages(llmMessages);
     const parts: ChatCompletionPart[] = [];
     const meta = { characterName: character.name, userName: userIdentity?.name };
@@ -3059,6 +3063,7 @@ export async function previewPromptRequestSnapshot(
             enabledTools,
         );
         const nativeBundle = buildNativeChatTools(enabledTools, expandedSourceIds, {
+            compactMemoryTools: true,
             characterName: character.name,
             userName: userIdentity?.name ?? "用户",
         });

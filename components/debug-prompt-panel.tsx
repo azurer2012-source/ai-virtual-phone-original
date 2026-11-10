@@ -1265,6 +1265,9 @@ export function DebugPromptPanel() {
                                 <details><summary>工具定义明细（按长度排序）</summary>
                                     {(activeChatSnapshot.requestStats.toolDetails ?? []).map((tool, index) => <div key={`${index}-${tool.name}`}>{tool.name}：{tool.jsonChars.toLocaleString()} JSON 字符；说明 {tool.descriptionChars.toLocaleString()}；参数结构 {tool.schemaJsonChars.toLocaleString()}</div>)}
                                 </details>
+                                <details><summary>正文来源明细</summary>
+                                    {Object.entries(activeChatSnapshot.requestStats.sourceDetails ?? {}).sort((a, b) => b[1].chars - a[1].chars).map(([source, row]) => <div key={source}>{source}：{row.count} 条，{row.chars.toLocaleString()} 字符</div>)}
+                                </details>
                             </>}
                         </div>
                     )}

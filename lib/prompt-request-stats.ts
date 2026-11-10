@@ -1,9 +1,17 @@
 /** Local-only structural counts, never a provider token estimate. No request text is retained. */
-export function measurePromptRequest(body: Record<string, unknown>) {
+export function measurePromptRequest(body: Record<string, unknown>, sourceMessages: { role: string; content: unknown; marker?: string }[] = []) {
     const size = (value: unknown) => value === undefined ? 0 : JSON.stringify(value).length;
     const messages = body.messages ?? body.contents;
     const system = body.system ?? body.systemInstruction;
     const tools = body.tools;
+    const sourceDetails: Record<string, { count: number; chars: number }> = {};
+    for (const message of sourceMessages) {
+        const marker = message.marker || '未标注';
+        const category = message.role === 'tool' ? '历史工具结果' : marker.includes('History [') ? '聊天历史' : marker.includes('ShortTerm Event') ? '近期事件' : marker;
+        const row = sourceDetails[category] ??= { count: 0, chars: 0 };
+        row.count++;
+        row.chars += typeof message.content === 'string' ? message.content.length : size(message.content);
+    }
     const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
     const toolDetails = (Array.isArray(tools) ? tools : []).flatMap(value => {
         const group = record(value);
@@ -38,5 +46,6 @@ export function measurePromptRequest(body: Record<string, unknown>) {
         toolGroups: Array.isArray(tools) ? tools.length : 0,
         toolDetails,
         roleDetails,
+        sourceDetails,
     };
 }
