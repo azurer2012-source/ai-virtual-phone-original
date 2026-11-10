@@ -4152,7 +4152,7 @@ export async function completePendingMcpOAuthCallback(): Promise<{ completed: bo
 
 // ── MCP Tool Execution (with handshake) ───────
 
-async function executeMcpTool(server: McpServerConfig, toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
+export async function executeMcpTool(server: McpServerConfig, toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
     try {
         throwIfAborted(signal);
         // Ensure initialized
@@ -4201,7 +4201,10 @@ async function executeMcpTool(server: McpServerConfig, toolName: string, args: R
 
 async function extractMcpToolResult(toolName: string, result: unknown, signal?: AbortSignal): Promise<ToolResult> {
     throwIfAborted(signal);
-    const r = result as { content?: { type?: string; text?: string; data?: string; mimeType?: string }[] } | undefined;
+    const r = result as { isError?: boolean; content?: { type?: string; text?: string; data?: string; mimeType?: string }[] } | undefined;
+    if (r?.isError) {
+        return { name: toolName, success: false, error: r.content?.filter(item => item.type === "text").map(item => item.text || "").join("\n") || "MCP工具返回错误" };
+    }
     const textParts: string[] = [];
     const mcpAttachments: MediaAttachment[] = [];
 

@@ -51,6 +51,7 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { CHAT_SESSION_CSS_EXAMPLE } from "@/lib/css-examples";
 import { Toggle, Input } from "@/components/ui/form";
 import { PageShell } from "@/components/ui/page-shell";
+import { OfflineMemoryReview } from './offline-memory-review';
 import { loadChatOfflineTurns } from "@/lib/chat-offline-storage";
 import { searchOfflineTurns } from "@/lib/offline-chat-search";
 
@@ -1241,6 +1242,7 @@ export function ChatSettingsPanel({
                     </button>
                 </div>
 
+                <OfflineMemoryReview key={session.id} sessionId={session.id} busy={offlineHistoryBusy} />
                 {/* Destructive Actions */}
                 <div className="menu-group">
                     {!session.isGroup && (
