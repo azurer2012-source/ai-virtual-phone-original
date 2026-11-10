@@ -6,6 +6,8 @@ import type { LLMContentPart } from "./llm-prompt-assembler";
 
 export type DebugChatState = { session: ChatSession; messages: ChatMessage[] } | null;
 export type DebugPromptSnapshot = {
+    origin?: "preview" | "request";
+    requestStats?: ReturnType<typeof import("./prompt-request-stats").measurePromptRequest>;
     id: string;
     timestamp: string;
     requestKind: "completion" | "native-tools" | "native-tools-stream";

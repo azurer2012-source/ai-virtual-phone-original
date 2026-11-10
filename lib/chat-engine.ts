@@ -1,6 +1,7 @@
 // lib/chat-engine.ts
 
 import { createSseJsonParser } from "./sse-json";
+import { measurePromptRequest } from "./prompt-request-stats";
 import { maybeAppendShortcutCapability } from "./offline-shortcut-capability";
 import { loadCharacters } from "./character-storage";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
@@ -518,6 +519,7 @@ export function appendEmptyGenerateGuardMessage(
 }
 
 export function publishDebugPromptSnapshot(params: {
+    origin?: "preview" | "request";
     request: ReturnType<typeof buildProviderRequest>;
     config: ApiConfig;
     preset: PresetConfig | null;
@@ -528,6 +530,8 @@ export function publishDebugPromptSnapshot(params: {
 }): DebugPromptSnapshot {
     const { request, config, preset, meta, options, requestKind, tools } = params;
     const snapshot: DebugPromptSnapshot = {
+        origin: params.origin ?? "request",
+        requestStats: measurePromptRequest(request.body),
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         timestamp: new Date().toISOString(),
         requestKind,
@@ -3060,6 +3064,7 @@ export async function previewPromptRequestSnapshot(
         });
         const request = buildProviderRequest(config, preset, requestMessages, { tools: nativeBundle.definitions });
         return publishDebugPromptSnapshot({
+            origin: "preview",
             request,
             config,
             preset,
@@ -3076,6 +3081,7 @@ export async function previewPromptRequestSnapshot(
 
     const request = buildProviderRequest(config, preset, requestMessages);
     return publishDebugPromptSnapshot({
+        origin: "preview",
         request,
         config,
         preset,

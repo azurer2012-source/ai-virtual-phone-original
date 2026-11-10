@@ -749,7 +749,6 @@ export function DebugPromptPanel() {
     }
 
     const totalChars = displayMessages.reduce((sum, m) => sum + stringifyContent(m.content).length, 0);
-    const estimatedTokens = Math.round(totalChars / 2);
 
     const debugTabs: [DebugMode, string][] = [
         ["chat", activeChatSession?.isGroup ? "群聊" : "聊天"],
@@ -1252,9 +1251,17 @@ export function DebugPromptPanel() {
                     <div className="pv-divider" />
                     <div className="pv-footer">
                         <span>{displayMessages.length} 条消息</span>
-                        <span>{totalChars.toLocaleString()} 字符</span>
-                        <span>~{estimatedTokens.toLocaleString()} tokens</span>
+                        <span>展示正文 {totalChars.toLocaleString()} 字符（非实际 token）</span>
                     </div>
+                    {mode === "chat" && activeChatSnapshot && (
+                        <div style={{ padding: "8px 12px", fontSize: 12, lineHeight: 1.7, overflowWrap: "anywhere" }}>
+                            <div>{activeChatSnapshot.origin === "preview" ? "手动预览 · 尚未发送" : activeChatSnapshot.origin === "request" ? "发送前请求快照 · 不代表服务端已接收" : "来源未记录"} · {new Date(activeChatSnapshot.timestamp).toLocaleString()}</div>
+                            {activeChatSnapshot.requestStats && <>
+                                <div>完整请求 JSON：{activeChatSnapshot.requestStats.requestJsonChars.toLocaleString()} 字符；消息：{activeChatSnapshot.requestStats.messagesJsonChars.toLocaleString()}；独立系统字段：{activeChatSnapshot.requestStats.systemJsonChars.toLocaleString()}</div>
+                                <div>工具定义：{activeChatSnapshot.requestStats.toolsJsonChars.toLocaleString()} 字符；其他字段：{activeChatSnapshot.requestStats.otherJsonChars.toLocaleString()}。含 JSON 结构，各项不严格相加；非模型计费 token。</div>
+                            </>}
+                        </div>
+                    )}
                 </>
             )}
         </div>
