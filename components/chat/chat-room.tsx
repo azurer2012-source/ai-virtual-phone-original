@@ -1091,6 +1091,21 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [offlineMode, setOfflineMode] = useState(false);
     const [theaterMode, setTheaterMode] = useState(() => kvGet(CHAT_THEATER_MODE_PREFIX + session.id) === "1");
     const [offlineTurns, setOfflineTurns] = useState<ChatOfflineTurn[]>([]);
+    const [offlineSearchTarget, setOfflineSearchTarget] = useState<string | null>(null);
+    useEffect(() => {
+        if (!offlineMode || !offlineSearchTarget) return;
+        const frame = requestAnimationFrame(() => {
+            const target = document.getElementById(`offline-search-${offlineSearchTarget}`);
+            if (target) {
+                const summary = document.getElementById(`offline-summary-${offlineSearchTarget}`);
+                if (summary instanceof HTMLDetailsElement) summary.open = true;
+                if (scrollRef.current) scrollElementWithinContainer(scrollRef.current, target, { block: 'center', behavior: 'smooth' });
+                target.animate([{ backgroundColor: 'rgba(255,200,80,.35)' }, { backgroundColor: 'transparent' }], { duration: 1800 });
+                setOfflineSearchTarget(null);
+            }
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [offlineMode, offlineSearchTarget, offlineTurns]);
     const [offlineVisibleCount, setOfflineVisibleCount] = useState(OFFLINE_INITIAL_LOAD);
     const [pendingOfflineUserText, setPendingOfflineUserText] = useState("");
     const [isOfflineGenerating, setIsOfflineGenerating] = useState(false);
@@ -2032,7 +2047,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     }, [displayMessages, flashMessageHighlight, restoreScrollAnchor, watchLoadMoreAnchorImages]);
 
     useLayoutEffect(() => {
-        if (!offlineMode) return;
+        if (!offlineMode || offlineSearchTarget) return;
         const el = scrollRef.current;
         if (el) el.scrollTop = el.scrollHeight;
     }, [offlineMode, offlineTurns.length, isOfflineGenerating, pendingOfflineUserText]);
@@ -5510,6 +5525,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                             const showTime = !prevTime || shouldShowTimestamp(turn.createdAt, prevTime);
                             return (
                             <Fragment key={turn.id}>
+                            <div id={`offline-search-${turn.id}`} aria-hidden="true" style={{ height: 4, borderRadius: 2 }} />
                             {showTime && <div className="chat-offline-time">{formatChatUiTime(turn.createdAt)}</div>}
                             <div className="chat-offline-turn">
                                 <div className="chat-offline-entry" data-role="user" style={offlineDisplay.userContent.trim() ? undefined : { display: "none" }}>
@@ -5611,7 +5627,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                         />
                                     </div>
                                     {turn.summary.trim() && (
-                                        <details className="chat-offline-summary-fold">
+                                        <details id={`offline-summary-${turn.id}`} className="chat-offline-summary-fold">
                                             <summary>摘要（{turn.summaryTag || "summary"}）</summary>
                                             <div className="chat-offline-summary-content">
                                                 <BilingualTextBlock
@@ -6319,6 +6335,17 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                             jumpToStoredMessage(messageId);
                         }}
                         onToolHistoryCleared={syncMessagesFromStorage}
+                        onJumpToOfflineTurn={(turnId) => {
+                            const turns = loadChatOfflineTurns(session.id);
+                            const index = turns.findIndex(turn => turn.id === turnId);
+                            if (index < 0) return;
+                            setOfflineTurns(turns);
+                            setOfflineVisibleCount(Math.max(OFFLINE_LOAD_MORE_COUNT, turns.length - index));
+                            setOfflineMode(true);
+                            kvSet(CHAT_OFFLINE_MODE_PREFIX + session.id, "1");
+                            setShowSettings(false);
+                            setOfflineSearchTarget(turnId);
+                        }}
                         offlineHistoryBusy={isOfflineGenerating}
                         onOfflineHistoryCleared={() => {
                             setOfflineTurns([]);

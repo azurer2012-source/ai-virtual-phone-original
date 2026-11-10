@@ -51,6 +51,8 @@ import { ConfirmDialog } from "@/components/ui/modal";
 import { CHAT_SESSION_CSS_EXAMPLE } from "@/lib/css-examples";
 import { Toggle, Input } from "@/components/ui/form";
 import { PageShell } from "@/components/ui/page-shell";
+import { loadChatOfflineTurns } from "@/lib/chat-offline-storage";
+import { searchOfflineTurns } from "@/lib/offline-chat-search";
 
 // 自定义状态栏预填模板：微博主页（契约=「状态栏」章节整段正文，含【逻辑】【格式】与包裹要求）
 // 预览用的默认示例数据：契约没有自带示例时兜底，字段与下面的微博模板对应
@@ -186,6 +188,7 @@ type ChatSettingsPanelProps = {
     session: ChatSession;
     onClose: () => void;
     onJumpToMessage?: (messageId: string) => void;
+    onJumpToOfflineTurn?: (turnId: string) => void;
     onDeleteFriend?: () => void;
     onSessionDeleted?: () => void;
     onToolHistoryCleared?: () => void;
@@ -287,6 +290,7 @@ export function ChatSettingsPanel({
     session,
     onClose,
     onJumpToMessage,
+    onJumpToOfflineTurn,
     onDeleteFriend,
     onSessionDeleted,
     onToolHistoryCleared,
@@ -426,6 +430,7 @@ export function ChatSettingsPanel({
     const [searchHistoryMessages, setSearchHistoryMessages] = useState<ChatMessage[]>([]);
     const [searchHasMore, setSearchHasMore] = useState(false);
     const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
+    const [offlineSearchResults, setOfflineSearchResults] = useState<ReturnType<typeof searchOfflineTurns>>([]);
     const [isSearching, setIsSearching] = useState(false);
     const searchRunRef = useRef(0);
 
@@ -469,6 +474,7 @@ export function ChatSettingsPanel({
         const runId = searchRunRef.current + 1;
         searchRunRef.current = runId;
         setSubmittedSearchQuery(rawQuery);
+        setOfflineSearchResults(searchOfflineTurns(loadChatOfflineTurns(session.id), rawQuery, SEARCH_RESULT_LIMIT));
 
         if (!rawQuery) {
             setSearchResults([]);
@@ -1631,12 +1637,19 @@ export function ChatSettingsPanel({
                                     <span className="menu-desc">正在搜索...</span>
                                 </div>
                             )}
-                            {searchMode && !isSearching && searchResults.length === 0 && (
+                            {searchMode && !isSearching && searchResults.length === 0 && offlineSearchResults.length === 0 && (
                                 <div className="ui-empty">
                                     <span className="menu-desc">无相关聊天记录</span>
                                 </div>
                             )}
                             {displayedSearchMessages.map(renderSearchMessage)}
+                            {searchMode && offlineSearchResults.map(result => <button key={result.id} type="button" className="ui-group-card w-full text-left" onClick={() => {
+                                onJumpToOfflineTurn?.(result.id);
+                                closeSearchPanel(); onClose();
+                            }}>
+                                <div className="menu-desc">线下{result.summaryOnly ? ' · 摘要' : ''} · {new Date(result.createdAt).toLocaleString()}</div>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 14, lineHeight: 1.7 }}>{result.excerpt}</div>
+                            </button>)}
                             {!searchMode && searchHasMore && (
                                 <button
                                     type="button"
