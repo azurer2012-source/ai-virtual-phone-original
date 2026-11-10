@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useContext } from "react";
+import { loadMcpDiagnostics } from '@/lib/mcp-diagnostics';
 import type { ChangeEvent } from "react";
 import { Plus, Trash2, Search, Wrench, AlertCircle, MoreHorizontal, Upload, Download, ChevronDown, ChevronRight } from "lucide-react";
 import type {
@@ -1201,6 +1202,10 @@ export function ToolboxSettings() {
             )}
 
             {/* MCP Servers */}
+            <button type="button" className="ui-btn" onClick={() => {
+                const rows = loadMcpDiagnostics();
+                setMcpNotice({ title: '最近MCP错误', message: rows.length ? rows.slice().reverse().map(row => `${new Date(row.time).toLocaleString()} · ${row.method}${row.tool ? ` / ${row.tool}` : ''} · HTTP ${row.status}\n${row.path} · 鉴权头${row.authorizationPresent ? '有' : '无'} · 会话头${row.sessionPresent ? '有' : '无'} · ${row.responseType} · 授权挑战${row.challenge ? '有' : '无'}${row.hints.length ? ` · ${row.hints.join(', ')}` : ''}`).join('\n\n') : '暂无记录。更新前的错误无法追溯；此处不保存Token和响应正文。' });
+            }}>查看最近MCP错误</button>
             <div className="flex justify-between items-center gap-3">
                 <p className="settings-menu-section-title">MCP Servers</p>
                 <button

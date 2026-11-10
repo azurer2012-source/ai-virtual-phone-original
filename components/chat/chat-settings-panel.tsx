@@ -52,6 +52,7 @@ import { CHAT_SESSION_CSS_EXAMPLE } from "@/lib/css-examples";
 import { Toggle, Input } from "@/components/ui/form";
 import { PageShell } from "@/components/ui/page-shell";
 import { OfflineMemoryReview } from './offline-memory-review';
+import { SearchMatchText } from './search-match-text';
 import { loadChatOfflineTurns } from "@/lib/chat-offline-storage";
 import { searchOfflineTurns } from "@/lib/offline-chat-search";
 
@@ -765,7 +766,7 @@ export function ChatSettingsPanel({
                         >
                             {msg.mediaType === "poke"
                                 ? <MessageBubble msg={msg} charName={senderChar?.name} userName={userIdentity?.name || "你"} characterId={msg.senderCharacterId || session.contactId} />
-                                : getSearchResultText(msg)}
+                                : <SearchMatchText text={getSearchResultText(msg)} query={submittedSearchQuery} />}
                         </div>
                     </div>
                 ) : (
@@ -805,14 +806,14 @@ export function ChatSettingsPanel({
                                 data-ui={bubbleRole === "user" ? "bubble-user" : "bubble-bot"}
                                 data-msg-id={msg.id}
                             >
-                                <MessageBubble
+                                {submittedSearchQuery.trim() && !msg.mediaType && !isStandaloneHtmlPreview ? <SearchMatchText text={getSearchResultText(msg)} query={submittedSearchQuery} /> : <MessageBubble
                                     msg={msg}
                                     charName={senderChar?.name}
                                     userName={userIdentity?.name || "你"}
                                     groupSize={session.isGroup ? (session.participantIds?.length || 0) + (session.isSpectator ? 0 : 1) : undefined}
                                     characterId={msg.senderCharacterId || session.contactId}
                                     defaultTranslationExpanded={session.collapseBilingualTranslation !== false ? false : true}
-                                />
+                                />}
                             </div>
                         </div>
                         {resultRole === "user" && (
@@ -1242,7 +1243,7 @@ export function ChatSettingsPanel({
                     </button>
                 </div>
 
-                <OfflineMemoryReview key={session.id} sessionId={session.id} busy={offlineHistoryBusy} />
+                <OfflineMemoryReview key={session.id} sessionId={session.id} busy={offlineHistoryBusy} userName={resolveUserIdentity(session.contactId, 'chat')?.name || ''} characterName={characterName} />
                 {/* Destructive Actions */}
                 <div className="menu-group">
                     {!session.isGroup && (
@@ -1654,7 +1655,7 @@ export function ChatSettingsPanel({
                                 closeSearchPanel(); onClose();
                             }}>
                                 <div className="menu-desc">线下{result.summaryOnly ? ' · 摘要' : ''} · {new Date(result.createdAt).toLocaleString()}</div>
-                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 14, lineHeight: 1.7 }}>{result.excerpt}</div>
+                                <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 14, lineHeight: 1.7 }}><SearchMatchText text={result.excerpt} query={submittedSearchQuery} /></div>
                             </button>)}
                             {searchTab === 'online' && !searchMode && searchHasMore && (
                                 <button

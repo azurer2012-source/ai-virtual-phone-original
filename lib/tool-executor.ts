@@ -1,3 +1,4 @@
+import { recordMcpDiagnostic, classifyMcpResponse } from './mcp-diagnostics';
 import type {
     CompositeToolConfig,
     CompositeToolPackageConfig,
@@ -3691,6 +3692,13 @@ async function mcpRequest(
         });
     }
 
+    if (res.status >= 400) {
+        recordMcpDiagnostic({ time: new Date().toISOString(), method, tool: method === 'tools/call' && typeof params?.name === 'string' ? params.name.slice(0, 80) : undefined,
+            status: res.status, path: directFetch ? '浏览器直连' : '服务器代理',
+            authorizationPresent: Object.keys(headers).some(key => key.toLowerCase() === 'authorization' && !!headers[key]),
+            sessionPresent: Object.keys(headers).some(key => key.toLowerCase() === 'mcp-session-id' && !!headers[key]),
+            challenge: !!res.headers['www-authenticate'], ...classifyMcpResponse(res.text) });
+    }
     if (res.status === 401) {
         // 把响应体带回去：401 可能来自应用登录网关、隧道/反代或 MCP 服务器本身，
         // 上层靠 body + WWW-Authenticate 头才能区分并给出正确指引。

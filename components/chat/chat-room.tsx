@@ -1,5 +1,6 @@
 "use client";
 import { findRenderedText } from "@/lib/find-rendered-text";
+import { useOfflineObStatuses } from './offline-ob-badge';
 
 import { forwardRef, Fragment, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChatSession, ChatMessage, CHAT_APP_SETTINGS_UPDATED_EVENT, CHAT_INITIAL_VISIBLE_MESSAGE_COUNT, CHAT_LOAD_MORE_MESSAGE_COUNT, CHAT_REQUEST_REPLY_EVENT, loadChatAppSettings, loadChatMessages, loadChatContacts, loadChatSessions, saveChatSessions, pushChatMessage, updateChatMessage, deleteChatMessage, deleteChatMessagesFrom, deleteChatMessagesByIds, retractChatMessage, editChatMessage, updateMessageMediaData, replaceResponseBatchWithParts, replaceGroupResponseRound, isReadingDiscussMessage, isSystemInstructionMessage, createResponseBatchId, createResponseRoundId, getLatestStateValues, getLatestCharacterStateValues, compareChatMessages, isSessionStreamingEnabled } from "@/lib/chat-storage";
@@ -1092,6 +1093,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [offlineMode, setOfflineMode] = useState(false);
     const [theaterMode, setTheaterMode] = useState(() => kvGet(CHAT_THEATER_MODE_PREFIX + session.id) === "1");
     const [offlineTurns, setOfflineTurns] = useState<ChatOfflineTurn[]>([]);
+    const offlineObStatuses = useOfflineObStatuses(session.id);
     const [offlineSearchTarget, setOfflineSearchTarget] = useState<string | null>(null);
     const offlineSearchQueryRef = useRef('');
     useEffect(() => {
@@ -5576,6 +5578,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                     </div>
                                     <div className="chat-offline-label-row">
                                         <div className="chat-offline-label">{session.isGroup ? (session.groupName || "群聊") : (character?.name || "对方")}</div>
+                                        {offlineObStatuses.has(turn.id) && <span className="offline-ob-progress-badge" style={{ marginLeft: 'auto', fontSize: 10, border: '1px solid currentColor', borderRadius: 5, padding: '2px 5px', opacity: .7, whiteSpace: 'nowrap' }}>{offlineObStatuses.get(turn.id)}</span>}
                                         {offlineFavoriteSelection && <label><input type="checkbox" aria-label="选择角色消息" checked={offlineFavoriteSelection.has(`${turn.id}:assistant`)} onChange={() => toggleOfflineFavorite(`${turn.id}:assistant`)} />选择</label>}
                                         {assistantHasHtmlPreview ? (
                                             <button
