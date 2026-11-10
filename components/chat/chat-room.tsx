@@ -1,4 +1,5 @@
 "use client";
+import { findRenderedText } from "@/lib/find-rendered-text";
 
 import { forwardRef, Fragment, memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChatSession, ChatMessage, CHAT_APP_SETTINGS_UPDATED_EVENT, CHAT_INITIAL_VISIBLE_MESSAGE_COUNT, CHAT_LOAD_MORE_MESSAGE_COUNT, CHAT_REQUEST_REPLY_EVENT, loadChatAppSettings, loadChatMessages, loadChatContacts, loadChatSessions, saveChatSessions, pushChatMessage, updateChatMessage, deleteChatMessage, deleteChatMessagesFrom, deleteChatMessagesByIds, retractChatMessage, editChatMessage, updateMessageMediaData, replaceResponseBatchWithParts, replaceGroupResponseRound, isReadingDiscussMessage, isSystemInstructionMessage, createResponseBatchId, createResponseRoundId, getLatestStateValues, getLatestCharacterStateValues, compareChatMessages, isSessionStreamingEnabled } from "@/lib/chat-storage";
@@ -1092,6 +1093,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [theaterMode, setTheaterMode] = useState(() => kvGet(CHAT_THEATER_MODE_PREFIX + session.id) === "1");
     const [offlineTurns, setOfflineTurns] = useState<ChatOfflineTurn[]>([]);
     const [offlineSearchTarget, setOfflineSearchTarget] = useState<string | null>(null);
+    const offlineSearchQueryRef = useRef('');
     useEffect(() => {
         if (!offlineMode || !offlineSearchTarget) return;
         const frame = requestAnimationFrame(() => {
@@ -1099,7 +1101,15 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             if (target) {
                 const summary = document.getElementById(`offline-summary-${offlineSearchTarget}`);
                 if (summary instanceof HTMLDetailsElement) summary.open = true;
-                if (scrollRef.current) scrollElementWithinContainer(scrollRef.current, target, { block: 'center', behavior: 'smooth' });
+                const turnElement = target.nextElementSibling?.classList.contains('chat-offline-time') ? target.nextElementSibling.nextElementSibling : target.nextElementSibling;
+                const range = turnElement instanceof HTMLElement ? findRenderedText(turnElement, offlineSearchQueryRef.current) : null;
+                const container = scrollRef.current;
+                if (container && range && range.getBoundingClientRect().height) {
+                    const rect = range.getBoundingClientRect();
+                    container.scrollTo({ top: container.scrollTop + rect.top - container.getBoundingClientRect().top - container.clientHeight * .35, behavior: 'smooth' });
+                    const selected = window.getSelection();
+                    selected?.removeAllRanges(); selected?.addRange(range);
+                } else if (container) scrollElementWithinContainer(container, target, { block: 'center', behavior: 'smooth' });
                 target.animate([{ backgroundColor: 'rgba(255,200,80,.35)' }, { backgroundColor: 'transparent' }], { duration: 1800 });
                 setOfflineSearchTarget(null);
             }
@@ -6335,7 +6345,8 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                             jumpToStoredMessage(messageId);
                         }}
                         onToolHistoryCleared={syncMessagesFromStorage}
-                        onJumpToOfflineTurn={(turnId) => {
+                        onJumpToOfflineTurn={(turnId, query) => {
+                            offlineSearchQueryRef.current = query;
                             const turns = loadChatOfflineTurns(session.id);
                             const index = turns.findIndex(turn => turn.id === turnId);
                             if (index < 0) return;

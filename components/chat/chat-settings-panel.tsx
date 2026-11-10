@@ -188,7 +188,7 @@ type ChatSettingsPanelProps = {
     session: ChatSession;
     onClose: () => void;
     onJumpToMessage?: (messageId: string) => void;
-    onJumpToOfflineTurn?: (turnId: string) => void;
+    onJumpToOfflineTurn?: (turnId: string, query: string) => void;
     onDeleteFriend?: () => void;
     onSessionDeleted?: () => void;
     onToolHistoryCleared?: () => void;
@@ -431,6 +431,7 @@ export function ChatSettingsPanel({
     const [searchHasMore, setSearchHasMore] = useState(false);
     const [searchResults, setSearchResults] = useState<ChatMessage[]>([]);
     const [offlineSearchResults, setOfflineSearchResults] = useState<ReturnType<typeof searchOfflineTurns>>([]);
+    const [searchTab, setSearchTab] = useState<'online' | 'offline'>('online');
     const [isSearching, setIsSearching] = useState(false);
     const searchRunRef = useRef(0);
 
@@ -1626,10 +1627,13 @@ export function ChatSettingsPanel({
                                 <Search size={20} strokeWidth={2.1} />
                             </button>
                         </div>
+                        <div className="flex gap-2 px-4 pb-3" role="tablist" aria-label="聊天记录类型">
+                            {(['online', 'offline'] as const).map(tab => <button key={tab} type="button" role="tab" aria-selected={searchTab === tab} className={`ui-btn ${searchTab === tab ? 'ui-btn-primary' : 'ui-btn-outline'} flex-1`} onClick={() => setSearchTab(tab)}>{tab === 'online' ? '线上' : '线下'}</button>)}
+                        </div>
                         <div className="flex flex-col gap-4 px-4 pb-4">
-                            {!searchMode && searchHistoryMessages.length === 0 && (
+                            {!searchMode && (searchTab === 'offline' || searchHistoryMessages.length === 0) && (
                                 <div className="ui-empty">
-                                    <span className="menu-desc">暂无聊天记录</span>
+                                    <span className="menu-desc">{searchTab === 'offline' ? '输入关键词搜索线下正文与摘要' : '暂无聊天记录'}</span>
                                 </div>
                             )}
                             {searchMode && isSearching && (
@@ -1637,20 +1641,20 @@ export function ChatSettingsPanel({
                                     <span className="menu-desc">正在搜索...</span>
                                 </div>
                             )}
-                            {searchMode && !isSearching && searchResults.length === 0 && offlineSearchResults.length === 0 && (
+                            {searchMode && !isSearching && (searchTab === 'online' ? searchResults.length === 0 : offlineSearchResults.length === 0) && (
                                 <div className="ui-empty">
                                     <span className="menu-desc">无相关聊天记录</span>
                                 </div>
                             )}
-                            {displayedSearchMessages.map(renderSearchMessage)}
-                            {searchMode && offlineSearchResults.map(result => <button key={result.id} type="button" className="ui-group-card w-full text-left" onClick={() => {
-                                onJumpToOfflineTurn?.(result.id);
+                            {searchTab === 'online' && displayedSearchMessages.map(renderSearchMessage)}
+                            {searchTab === 'offline' && searchMode && offlineSearchResults.map(result => <button key={result.id} type="button" className="ui-group-card w-full text-left" onClick={() => {
+                                onJumpToOfflineTurn?.(result.id, submittedSearchQuery);
                                 closeSearchPanel(); onClose();
                             }}>
                                 <div className="menu-desc">线下{result.summaryOnly ? ' · 摘要' : ''} · {new Date(result.createdAt).toLocaleString()}</div>
                                 <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 14, lineHeight: 1.7 }}>{result.excerpt}</div>
                             </button>)}
-                            {!searchMode && searchHasMore && (
+                            {searchTab === 'online' && !searchMode && searchHasMore && (
                                 <button
                                     type="button"
                                     className="ui-btn ui-btn-ghost ui-btn-bordered-ghost w-full"
@@ -1659,7 +1663,7 @@ export function ChatSettingsPanel({
                                     查看更多消息
                                 </button>
                             )}
-                            {searchMode && !isSearching && searchResults.length >= SEARCH_RESULT_LIMIT && (
+                            {searchMode && !isSearching && (searchTab === 'online' ? searchResults.length : offlineSearchResults.length) >= SEARCH_RESULT_LIMIT && (
                                 <div className="ui-empty py-2">
                                     <span className="menu-desc">仅显示最近 {SEARCH_RESULT_LIMIT} 条结果</span>
                                 </div>
