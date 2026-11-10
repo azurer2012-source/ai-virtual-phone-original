@@ -70,6 +70,7 @@ export function KeyboardAutoSendDebounceItem({ sessionId }: { sessionId: string 
                         value={seconds}
                         onChange={e => commit(Number(e.target.value))}
                         className="ui-input h-8 w-16 text-center"
+                        style={{ width: 64, minWidth: 64, maxWidth: 64, height: 32, padding: '4px 6px', flex: '0 0 64px' }}
                     />
                 </div>
             </label>

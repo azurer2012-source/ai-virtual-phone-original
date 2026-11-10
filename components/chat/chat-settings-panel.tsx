@@ -1025,6 +1025,7 @@ export function ChatSettingsPanel({
                                 value={visionImagePromptLimit}
                                 onChange={e => updateVisionImagePromptLimit(e.target.value)}
                                 className="ui-input h-8 w-14 text-center"
+                                style={{ width: 56, minWidth: 56, maxWidth: 56, height: 32, padding: '4px 6px', flex: '0 0 56px' }}
                             />
                             <button
                                 type="button"
