@@ -1,5 +1,8 @@
 "use client";
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
+import { Brain, ChevronRight } from 'lucide-react';
+import { BINDING_ACCENTS } from '@/lib/ui-accent-colors';
 import { loadChatOfflineTurns } from '@/lib/chat-offline-storage';
 import { resolveAuxiliaryApiConfig } from '@/lib/settings-storage';
 import { simpleLLMCall } from '@/lib/api-helpers';
@@ -85,14 +88,18 @@ export function OfflineMemoryReview({ sessionId, busy, userName, characterName }
         } finally { clearTimeout(timeout); setWorking(false); }
     }
 
-    return <details className="ui-group-card"><summary>整理线下记忆到 OB</summary>
+    return <details className="menu-group offline-ob-review"><summary className="menu-item offline-ob-review-heading">
+        <span className="chat-info-icon" style={{ '--icon-color': BINDING_ACCENTS.memory } as CSSProperties}><Brain size={22} strokeWidth={1.75} /></span>
+        <span className="menu-label-group"><span className="menu-label">整理线下记忆到 OB</span></span>
+        <ChevronRight size={16} className="offline-ob-review-chevron" style={{ marginLeft: 'auto', color: 'var(--c-icon)' }} />
+    </summary><div style={{ padding: '0 16px 16px' }}>
         <p className="menu-desc">手动整理最早未处理的最多20轮，使用辅助设置中的记忆总结模型。生成预览和保存至OB分别调用接口、可能产生费用；不会改动正文或summary。</p>
         {servers.length === 1 ? <p className="menu-desc">保存目标：Ombre Brain（{servers[0].name}）</p> : <><label className="menu-desc">选择保存到哪个OB服务</label><select className="ui-input w-full" value={serverId} disabled={working || !!draft} onChange={e => setServerId(e.target.value)}>
             {!servers.length && <option value="">未发现启用的OB服务</option>}
             {servers.map(server => <option key={server.id} value={server.id}>{server.name}</option>)}
         </select></>}
         {rangeLabel && <p className="menu-desc">本批：{rangeLabel}</p>}
-        <label className="menu-desc">每批轮数 <input type="number" min={1} max={20} value={count} disabled={working} onChange={e => setCount(Math.max(1, Math.min(20, Number(e.target.value) || 1)))} /></label>
+        <label className="menu-desc" style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '12px 0' }}>每批轮数 <input className="ui-input" aria-label="每批整理轮数" style={{ width: 88, minHeight: 38, textAlign: 'center', border: '1px solid var(--c-border, #d9dce2)', borderRadius: 10, background: 'var(--c-input)', color: 'var(--c-text)' }} type="number" min={1} max={20} value={count} disabled={working} onChange={e => setCount(Math.max(1, Math.min(20, Number(e.target.value) || 1)))} /></label>
         <button type="button" className="ui-btn" disabled={working || busy || !serverId || uncertain} onClick={() => void prepare()}>生成记忆预览</button>
         {draft && <><label className="menu-desc">记忆标题<input className="ui-input w-full" value={title} maxLength={80} disabled={working} onChange={e => setTitle(e.target.value)} /></label><textarea className="ui-input w-full" rows={10} value={draft} disabled={working} onChange={e => setDraft(e.target.value)} />
             <button type="button" className="ui-btn" disabled={working || busy || !draft.trim() || draft.trim() === '无重要记忆'} onClick={() => void save()}>确认保存至 OB</button>
@@ -112,5 +119,5 @@ export function OfflineMemoryReview({ sessionId, busy, userName, characterName }
                 } setRecovery(null);
             }}>确认</button><button type="button" className="ui-btn" onClick={() => setRecovery(null)}>取消</button></div>}</>}
         {notice && <p className="menu-desc" role="status">{notice}</p>}
-    </details>;
+    </div></details>;
 }

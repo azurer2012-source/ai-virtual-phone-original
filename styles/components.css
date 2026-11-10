@@ -2344,6 +2344,10 @@
 }
 
 /* Footer */
+.offline-ob-review > summary { list-style: none; cursor: pointer; }
+.offline-ob-review > summary::-webkit-details-marker { display: none; }
+.offline-ob-review[open] > summary .offline-ob-review-chevron { transform: rotate(90deg); }
+
 .pv-footer {
   padding: 8px 14px;
   font-size: calc(11px * var(--app-text-scale, 1));

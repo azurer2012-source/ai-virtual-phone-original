@@ -9,8 +9,8 @@ export function useOfflineObStatuses(sessionId: string) {
             const next = new Map<string, string>();
             for (const server of loadMcpServers()) for (const row of Object.values(loadOfflineObLedger(OFFLINE_OB_PREFIX + sessionId + ':' + server.id))) {
                 for (const id of row.turnIds) {
-                    const label = row.status !== 'done' ? 'OB待核对' : row.skipped === undefined ? '已处理' : row.skipped ? '已跳过' : '已存OB';
-                    if (next.get(id) !== '已存OB') next.set(id, label);
+                    const label = row.status !== 'done' ? 'OB待核对' : row.skipped ? '已跳过' : '已存档';
+                    if (next.get(id) !== '已存档') next.set(id, label);
                 }
             }
             setStatuses(next);

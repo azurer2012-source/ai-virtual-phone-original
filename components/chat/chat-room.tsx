@@ -5578,7 +5578,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                     </div>
                                     <div className="chat-offline-label-row">
                                         <div className="chat-offline-label">{session.isGroup ? (session.groupName || "群聊") : (character?.name || "对方")}</div>
-                                        {offlineObStatuses.has(turn.id) && <span className="offline-ob-progress-badge" style={{ marginLeft: 'auto', fontSize: 10, border: '1px solid currentColor', borderRadius: 5, padding: '2px 5px', opacity: .7, whiteSpace: 'nowrap' }}>{offlineObStatuses.get(turn.id)}</span>}
+                                        {offlineObStatuses.has(turn.id) && <span className="offline-ob-progress-badge" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--c-icon, #8b8f97)', border: '1px solid var(--c-icon, #8b8f97)', borderRadius: 5, padding: '2px 5px', whiteSpace: 'nowrap' }}>{offlineObStatuses.get(turn.id)}</span>}
                                         {offlineFavoriteSelection && <label><input type="checkbox" aria-label="选择角色消息" checked={offlineFavoriteSelection.has(`${turn.id}:assistant`)} onChange={() => toggleOfflineFavorite(`${turn.id}:assistant`)} />选择</label>}
                                         {assistantHasHtmlPreview ? (
                                             <button
