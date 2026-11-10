@@ -1251,21 +1251,19 @@ export function DebugPromptPanel() {
                     <div className="pv-divider" />
                     <div className="pv-footer">
                         <span>{displayMessages.length} 条消息</span>
-                        <span>展示正文 {totalChars.toLocaleString()} 字符（非实际 token）</span>
+                        <span>正文 {totalChars.toLocaleString()} 字符</span>
                     </div>
                     {mode === "chat" && activeChatSnapshot && (
                         <div style={{ padding: "8px 12px", fontSize: 12, lineHeight: 1.7, overflowWrap: "anywhere", maxHeight: "40%", minHeight: 0, flexShrink: 0, overflowY: "auto", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}>
-                            <div>{activeChatSnapshot.origin === "preview" ? "手动预览 · 尚未发送" : activeChatSnapshot.origin === "request" ? "发送前请求快照 · 不代表服务端已接收" : "来源未记录"} · {new Date(activeChatSnapshot.timestamp).toLocaleString()}</div>
+                            <div>{activeChatSnapshot.origin === "preview" ? "手动预览" : activeChatSnapshot.origin === "request" ? "发送前快照" : "来源未记录"} · {new Date(activeChatSnapshot.timestamp).toLocaleString()}</div>
                             {activeChatSnapshot.requestStats && <>
                                 <div>完整请求 JSON：{activeChatSnapshot.requestStats.requestJsonChars.toLocaleString()} 字符；消息：{activeChatSnapshot.requestStats.messagesJsonChars.toLocaleString()}；独立系统字段：{activeChatSnapshot.requestStats.systemJsonChars.toLocaleString()}</div>
-                                <div>工具定义：{activeChatSnapshot.requestStats.toolsJsonChars.toLocaleString()} 字符；其他字段：{activeChatSnapshot.requestStats.otherJsonChars.toLocaleString()}。含 JSON 结构，各项不严格相加；非模型计费 token。</div>
+                                <div>工具定义：{activeChatSnapshot.requestStats.toolsJsonChars.toLocaleString()} 字符；其他字段：{activeChatSnapshot.requestStats.otherJsonChars.toLocaleString()}</div>
                                 <details><summary>按消息角色统计</summary>
                                     {Object.entries(activeChatSnapshot.requestStats.roleDetails ?? {}).map(([role, row]) => <div key={role}>{role}：{row.count} 条，{row.jsonChars.toLocaleString()} JSON 字符</div>)}
-                                    <div>system 可能混合设定、事件和记忆；此处不能据角色单独认定为短期记忆。</div>
                                 </details>
                                 <details><summary>工具定义明细（按长度排序）</summary>
                                     {(activeChatSnapshot.requestStats.toolDetails ?? []).map((tool, index) => <div key={`${index}-${tool.name}`}>{tool.name}：{tool.jsonChars.toLocaleString()} JSON 字符；说明 {tool.descriptionChars.toLocaleString()}；参数结构 {tool.schemaJsonChars.toLocaleString()}</div>)}
-                                    <div>仅统计名称与长度，不保存参数值或工具结果正文。</div>
                                 </details>
                             </>}
                         </div>
