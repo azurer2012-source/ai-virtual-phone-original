@@ -1254,7 +1254,7 @@ export function DebugPromptPanel() {
                         <span>展示正文 {totalChars.toLocaleString()} 字符（非实际 token）</span>
                     </div>
                     {mode === "chat" && activeChatSnapshot && (
-                        <div style={{ padding: "8px 12px", fontSize: 12, lineHeight: 1.7, overflowWrap: "anywhere" }}>
+                        <div style={{ padding: "8px 12px", fontSize: 12, lineHeight: 1.7, overflowWrap: "anywhere", maxHeight: "40%", minHeight: 0, flexShrink: 0, overflowY: "auto", overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}>
                             <div>{activeChatSnapshot.origin === "preview" ? "手动预览 · 尚未发送" : activeChatSnapshot.origin === "request" ? "发送前请求快照 · 不代表服务端已接收" : "来源未记录"} · {new Date(activeChatSnapshot.timestamp).toLocaleString()}</div>
                             {activeChatSnapshot.requestStats && <>
                                 <div>完整请求 JSON：{activeChatSnapshot.requestStats.requestJsonChars.toLocaleString()} 字符；消息：{activeChatSnapshot.requestStats.messagesJsonChars.toLocaleString()}；独立系统字段：{activeChatSnapshot.requestStats.systemJsonChars.toLocaleString()}</div>

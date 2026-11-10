@@ -2350,6 +2350,7 @@
   color: var(--c-icon);
   display: flex;
   gap: 16px;
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 
