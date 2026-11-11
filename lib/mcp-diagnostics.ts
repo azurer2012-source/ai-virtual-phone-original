@@ -1,6 +1,6 @@
 import { kvGet, kvSet } from './kv-db';
 const KEY = 'ai_phone_mcp_diagnostics_v1';
-export type McpDiagnostic = { time: string; method: string; tool?: string; status: number; path: string; authorizationPresent: boolean; sessionPresent: boolean; responseType: string; challenge: boolean; hints: string[] };
+export type McpDiagnostic = { time: string; method: string; tool?: string; status: number; path: string; authorizationPresent: boolean; sessionPresent: boolean; responseType: string; challenge: boolean; hints: string[]; proxyStage?: string };
 export function loadMcpDiagnostics(): McpDiagnostic[] { try { const rows = JSON.parse(kvGet(KEY) || '[]'); return Array.isArray(rows) ? rows.slice(-20) : []; } catch { return []; } }
 export function clearMcpDiagnostics() { kvSet(KEY, '[]'); }
 export function recordMcpDiagnostic(row: McpDiagnostic) {

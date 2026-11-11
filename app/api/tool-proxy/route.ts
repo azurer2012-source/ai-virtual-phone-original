@@ -63,6 +63,12 @@ function blockedProxyUrlReason(rawUrl: string): string | null {
  * Body: { url, method, headers, body }
  */
 export async function POST(req: NextRequest) {
+    const response = await handleProxy(req);
+    response.headers.set("x-float-tool-proxy", "handled");
+    return response;
+}
+
+async function handleProxy(req: NextRequest) {
     let requestUrlForDebug = "";
     let fetchUrlForDebug = "";
     try {
@@ -131,7 +137,7 @@ export async function POST(req: NextRequest) {
         clearTimeout(timeout);
 
         // Forward response headers we care about
-        const responseHeaders: Record<string, string> = {};
+        const responseHeaders: Record<string, string> = { "x-float-upstream-status": String(res.status) };
         const sessionId = res.headers.get("mcp-session-id");
         if (sessionId) responseHeaders["mcp-session-id"] = sessionId;
         const wwwAuth = res.headers.get("www-authenticate");

@@ -230,6 +230,10 @@ async function proxyFetch(
         if (sessionId) headers["mcp-session-id"] = sessionId;
         const wwwAuth = res.headers.get("www-authenticate");
         if (wwwAuth) headers["www-authenticate"] = wwwAuth;
+        for (const key of ["x-float-tool-proxy", "x-float-upstream-status"]) {
+            const value = res.headers.get(key);
+            if (value) headers[key] = value;
+        }
 
         return { status: res.status, text, headers };
     } finally {
@@ -3697,7 +3701,10 @@ async function mcpRequest(
             status: res.status, path: directFetch ? '浏览器直连' : '服务器代理',
             authorizationPresent: Object.keys(headers).some(key => key.toLowerCase() === 'authorization' && !!headers[key]),
             sessionPresent: Object.keys(headers).some(key => key.toLowerCase() === 'mcp-session-id' && !!headers[key]),
-            challenge: !!res.headers['www-authenticate'], ...classifyMcpResponse(res.text) });
+            challenge: !!res.headers['www-authenticate'], ...classifyMcpResponse(res.text),
+            proxyStage: directFetch ? undefined : res.headers['x-float-tool-proxy'] === 'handled'
+                ? (/^\d{3}$/.test(res.headers['x-float-upstream-status'] || '') ? `上游HTTP ${res.headers['x-float-upstream-status']}` : '代理已处理')
+                : '未见代理标记' });
     }
     if (res.status === 401) {
         // 把响应体带回去：401 可能来自应用登录网关、隧道/反代或 MCP 服务器本身，
