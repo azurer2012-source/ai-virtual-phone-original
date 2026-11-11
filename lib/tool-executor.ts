@@ -1,4 +1,5 @@
 import { recordMcpDiagnostic, classifyMcpResponse } from './mcp-diagnostics';
+import { isOmbreToolset } from './memory-tool-loading';
 import type {
     CompositeToolConfig,
     CompositeToolPackageConfig,
@@ -507,7 +508,7 @@ async function executeSingleToolCall(
             if (!server.enabled || !server.discoveredTools) continue;
             if (hint.serverId && server.id !== hint.serverId) continue;
             if (server.discoveredTools.find(t => t.name === call.name)) {
-                return executeMcpTool(server, call.name, call.args, context?.signal);
+                return executeMcpTool(server, call.name, call.args, context?.signal, true);
             }
         }
         return null;
@@ -4167,12 +4168,65 @@ export async function completePendingMcpOAuthCallback(): Promise<{ completed: bo
 
 // ── MCP Tool Execution (with handshake) ───────
 
-export async function executeMcpTool(server: McpServerConfig, toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
+const OB_RETRY_KEY = 'float-ob-write-retries-v1';
+const OB_RETRY_DELAY = 10 * 60 * 1000;
+const obWrites = new Set(['hold', 'grow', 'trace', 'plan', 'letter_write', 'letter_lock_update', 'anchor', 'release']);
+type ObRetry = { id: string; serverId: string; name: string; args: Record<string, unknown>; due: number };
+
+function readObRetries(): ObRetry[] {
+    try { return JSON.parse(localStorage.getItem(OB_RETRY_KEY) || '[]'); } catch { return []; }
+}
+
+async function enqueueObRetry(serverId: string, name: string, args: Record<string, unknown>): Promise<boolean> {
+    try {
+        return await navigator.locks.request(OB_RETRY_KEY, () => {
+            const pending = readObRetries();
+            if (pending.some(row => row.serverId === serverId && row.name === name && JSON.stringify(row.args) === JSON.stringify(args))) return true;
+            localStorage.setItem(OB_RETRY_KEY, JSON.stringify([...pending, { id: crypto.randomUUID(), serverId, name, args, due: Date.now() + OB_RETRY_DELAY }]));
+            return true;
+        });
+    } catch { return false; }
+}
+
+export function startObWriteRetries() {
+    const tick = () => {
+        if (document.visibilityState !== 'visible' || !navigator.locks || !readObRetries().some(row => row.due <= Date.now())) return;
+        void navigator.locks.request(OB_RETRY_KEY, { ifAvailable: true }, async lock => {
+            if (!lock) return;
+            for (const row of readObRetries()) {
+                if (row.due > Date.now() || document.visibilityState !== 'visible') break;
+                const server = loadMcpServers().find(item => item.id === row.serverId);
+                if (!server) continue;
+                localStorage.setItem(OB_RETRY_KEY, JSON.stringify(readObRetries().filter(item => item.id !== row.id)));
+                if (!server.enabled || !isOmbreToolset(server.discoveredTools || []) || !obWrites.has(row.name) || !server.discoveredTools?.some(tool => tool.name === row.name)) continue;
+                const result = await executeMcpTool(server, row.name, row.args, AbortSignal.timeout(60000)).catch(() => null);
+                const success = !!result?.success && !/OB-E\d+/.test(result.data || '');
+                window.dispatchEvent(new CustomEvent('float-ob-retry-result', { detail: success ? 'OB写入重试成功' : 'OB写入重试未确认，请在OB核对。' }));
+            }
+        }).catch(() => {});
+    };
+    const timer = window.setInterval(tick, 15000);
+    window.addEventListener('pageshow', tick);
+    document.addEventListener('visibilitychange', tick);
+    tick();
+    return () => {
+        window.clearInterval(timer);
+        window.removeEventListener('pageshow', tick);
+        document.removeEventListener('visibilitychange', tick);
+    };
+}
+
+export async function executeMcpTool(server: McpServerConfig, toolName: string, args: Record<string, unknown>, signal?: AbortSignal, retryUnsentWrite = false): Promise<ToolResult> {
+    const obWrite = obWrites.has(toolName) && isOmbreToolset(server.discoveredTools || []);
     try {
         throwIfAborted(signal);
         // Ensure initialized
         const init = await mcpInitialize(server, signal);
         if (!init.success) {
+            if (retryUnsentWrite && obWrite && !args.delete && !args.hard_delete && typeof navigator !== 'undefined' && navigator.locks && await enqueueObRetry(server.id, toolName, args)) {
+                const notice = 'OB写入尚未发出，10分钟后在Float前台重试一次。请等待，避免重复提交。';
+                return { name: toolName, success: false, error: notice, userNotice: notice };
+            }
             return { name: toolName, success: false, error: init.error || "MCP 初始化失败" };
         }
 
@@ -4183,11 +4237,12 @@ export async function executeMcpTool(server: McpServerConfig, toolName: string, 
             arguments: args,
         }, getMcpSessionHeaders(server), false, useSse, signal, server.directFetch);
 
-        // Session expired — retry once
+        // Invalidate the session for future requests. Replaying a sent write may duplicate it.
         if (res.error?.code === 401 || res.error?.code === 404) {
             server.sessionId = undefined;
             _mcpSessions.delete(server.id);
             _mcpSseEndpoints.delete(server.id);
+            if (obWrite) return { name: toolName, success: false, error: res.error.message };
             const reinit = await mcpInitialize(server, signal);
             if (!reinit.success) {
                 return { name: toolName, success: false, error: reinit.error || "MCP 重新初始化失败" };

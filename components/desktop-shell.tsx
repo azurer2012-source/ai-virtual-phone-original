@@ -141,7 +141,7 @@ import { startWeixinCloudRealtimeSync } from "@/lib/weixin-cloud-sync";
 import { WeixinSyncToast } from "@/components/weixin-sync-toast";
 import { sendBrowserNotification } from "@/lib/browser-notification";
 import type { ChatSharePayload } from "@/lib/chat-share";
-import { completePendingMcpOAuthCallback } from "@/lib/tool-executor";
+import { completePendingMcpOAuthCallback, startObWriteRetries } from "@/lib/tool-executor";
 import { LayoutGrid, LoaderCircle, RefreshCw } from "lucide-react";
 
 const EMOJI_FONTS = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla"';
@@ -1058,6 +1058,15 @@ export function DesktopShell({ initialThemeProfile, initialThemeAssets }: Deskto
   const [desktopReady, setDesktopReady] = useState(false);
   const [glassPaintPass, setGlassPaintPass] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const onResult = (event: Event) => setNotice((event as CustomEvent<string>).detail);
+    window.addEventListener('float-ob-retry-result', onResult);
+    const stop = startObWriteRetries();
+    return () => {
+      stop();
+      window.removeEventListener('float-ob-retry-result', onResult);
+    };
+  }, []);
   const [activeApp, setActiveApp] = useState<DesktopIconId | null>(null);
   const [customApps, setCustomApps] = useState<InstalledCustomApp[]>([]);
   // 自定义 APP 桌面图标样式偏好（global = 忽略上传图标走全局效果）
