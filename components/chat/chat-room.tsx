@@ -1128,6 +1128,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         parts?: { characterId: string; characterName: string; texts: string[] }[];
     }>(null);
     const [offlineStreamPreview, setOfflineStreamPreview] = useState<null | { content: string; summary: string }>(null);
+    const [offlineToolNotice, setOfflineToolNotice] = useState<{ sessionId: string; text: string } | null>(null);
     const streamAccumRef = useRef("");
     const offlineStreamAccumRef = useRef("");
     // 群聊/单聊流式预览解析的 rAF 合并帧（限频：一帧最多解析一次全文）
@@ -4183,6 +4184,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         setIsOfflineGenerating(true);
         offlineStreamAccumRef.current = "";
         setOfflineStreamPreview(null);
+        setOfflineToolNotice(null);
         const offlineRun = createOfflineGenerationRun(session.id);
         const offlineRunId = offlineRun.runId;
         const isCurrentOfflineRun = () => isOfflineGenerationRunActive(session.id, offlineRunId);
@@ -4214,7 +4216,13 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                 };
                 const result = session.isGroup
                     ? await generateGroupOfflineChatCompletion(session, history, { signal: offlineRun.controller.signal, onStreamDelta: onOfflineDelta })
-                    : await generateOfflineChatCompletion(session, history, { signal: offlineRun.controller.signal, onStreamDelta: onOfflineDelta });
+                    : await generateOfflineChatCompletion(session, history, {
+                        signal: offlineRun.controller.signal,
+                        onStreamDelta: onOfflineDelta,
+                        onToolNotice: (text) => {
+                            if (isCurrentOfflineRun()) setOfflineToolNotice({ sessionId: session.id, text });
+                        },
+                    });
                 if (!isCurrentOfflineRun()) return;
                 const assistantContent = result.content.trim() || result.rawText.trim();
                 if (!assistantContent) throw new Error("AI 没有返回线下正文");
@@ -4334,6 +4342,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
         setIsOfflineGenerating(true);
         offlineStreamAccumRef.current = "";
         setOfflineStreamPreview(null);
+        setOfflineToolNotice(null);
         const offlineRun = createOfflineGenerationRun(session.id);
         const offlineRunId = offlineRun.runId;
         const isCurrentOfflineRun = () => isOfflineGenerationRunActive(session.id, offlineRunId);
@@ -4364,7 +4373,13 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             };
             const result = session.isGroup
                 ? await generateGroupOfflineChatCompletion(session, history, { signal: offlineRun.controller.signal, onStreamDelta: onOfflineDelta })
-                : await generateOfflineChatCompletion(session, history, { signal: offlineRun.controller.signal, onStreamDelta: onOfflineDelta });
+                : await generateOfflineChatCompletion(session, history, {
+                    signal: offlineRun.controller.signal,
+                    onStreamDelta: onOfflineDelta,
+                    onToolNotice: (text) => {
+                        if (isCurrentOfflineRun()) setOfflineToolNotice({ sessionId: session.id, text });
+                    },
+                });
             if (!isCurrentOfflineRun()) return;
             const assistantContent = result.content.trim() || result.rawText.trim();
             if (!assistantContent) throw new Error("AI 没有返回线下正文");
@@ -5692,6 +5707,28 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                         <span>线下回复生成中</span>
                                     </div>
                                 )}
+                            </div>
+                        )}
+                        {offlineToolNotice?.sessionId === session.id && (
+                            <div
+                                className="chat-offline-tool-notice"
+                                role="status"
+                                style={{
+                                    alignSelf: "center",
+                                    width: "fit-content",
+                                    maxWidth: "100%",
+                                    margin: "8px auto",
+                                    padding: "5px 10px",
+                                    borderRadius: 10,
+                                    background: "rgba(238, 240, 243, 0.84)",
+                                    color: "#374151",
+                                    fontSize: 12,
+                                    lineHeight: 1.5,
+                                    textAlign: "center",
+                                    overflowWrap: "anywhere",
+                                }}
+                            >
+                                {offlineToolNotice.text}
                             </div>
                         )}
                     </div>

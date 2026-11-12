@@ -63,9 +63,9 @@ import { formatCoreMemories, formatLongTermMemories } from "./memory-injector";
 import { maybeRunSummarization } from "./memory-summarizer";
 import { prepareShortTermContext } from "./short-term-assembler";
 import { parseActionTags, dispatchActions } from "./action-parser";
-import { findEnabledToolForSchema, getEnabledTools, type EnabledTool } from "./tool-storage";
+import { findEnabledToolForSchema, getEnabledTools, loadMcpServers, type EnabledTool } from "./tool-storage";
 import { formatToolsForPrompt, formatToolSchema } from "./tool-prompt";
-import { parseToolCalls, parseToolFetches, executeToolCalls, formatToolResults } from "./tool-executor";
+import { parseToolCalls, parseToolFetches, executeToolCalls, executeMcpTool, formatToolResults } from "./tool-executor";
 import type { ToolCall, ToolResult } from "./tool-executor";
 import { getCustomStickerNames, getCustomStickerExample } from "./custom-sticker-storage";
 import { formatCustomAppChatDirectivesForPrompt } from "./custom-app-chat-directives";
@@ -2055,7 +2055,7 @@ export type OfflineChatCompletionResult = ParsedOfflineResponse & {
 export async function generateOfflineChatCompletion(
     session: ChatSession,
     history: ChatMessage[],
-    options?: { signal?: AbortSignal; onStreamDelta?: (delta: string) => void },
+    options?: { signal?: AbortSignal; onStreamDelta?: (delta: string) => void; onToolNotice?: (notice: string) => void },
 ): Promise<OfflineChatCompletionResult> {
     const { llmMessages, character, config, preset, regexes, userIdentity } = await buildChatPromptMessages(
         session,
@@ -2076,22 +2076,85 @@ export async function generateOfflineChatCompletion(
         signal: options?.signal,
         onReasoning: (t: string) => { reasoning = t; },
     };
-    let rawOutput: string;
-    if (isSessionStreamingEnabled(session, false) && options?.onStreamDelta) {
+    const obTools = nativeToolProtocolForConfig(config)
+        ? getEnabledTools("chat").filter(tool => tool.source === "mcp_server" && isOmbreToolset(tool.mcpTools || []))
+        : [];
+    const obServers = obTools.length > 0 ? loadMcpServers() : [];
+    const streaming = isSessionStreamingEnabled(session, false) && Boolean(options?.onStreamDelta);
+    const requestMessages = toLlmRequestMessages(llmMessages);
+    if (obTools.length > 0) {
+        requestMessages.unshift({
+            role: "system",
+            content: "线下回复正文沿用本会话的叙事视角、称呼和输出格式。Ombre Brain 的记忆条目和工具结果仅供参考其中的事实与情景。存档规则只适用于写入记忆的内容，第三人称摘要规则只适用于摘要。正文和角色对白保持当前场景的原有视角与口吻，避免把正在发生的互动改写成第三人称回顾。",
+        });
+    }
+    const toolBuildOptions = { ...meta, compactMemoryTools: true };
+    let expandedSources: string[] = [];
+    let rawOutput: string | undefined;
+
+    // Keep tool exchanges in this request only. Offline cards consume the final response.
+    for (let round = 0; round < 4 && obTools.length > 0; round += 1) {
+        throwIfAborted(options?.signal);
+        const bundle = buildNativeChatTools(obTools, expandedSources, toolBuildOptions);
+        const result = await sendLLMToolRequest(config, preset, requestMessages, bundle.definitions, regexes, meta, requestOptions);
+        throwIfAborted(options?.signal);
+        if (result.toolCalls.length === 0) {
+            rawOutput = result.content;
+            reasoning = result.reasoning || "";
+            if (streaming) options?.onStreamDelta?.(rawOutput);
+            break;
+        }
+        requestMessages.push({
+            role: "assistant",
+            content: result.content,
+            reasoning: result.reasoning,
+            openRouterReasoningDetails: result.openRouterReasoningDetails,
+            toolCalls: result.toolCalls,
+        });
+        let failed = false;
+        for (const call of result.toolCalls) {
+            throwIfAborted(options?.signal);
+            const loader = bundle.loaderMap.get(call.name);
+            const name = bundle.nameMap.get(call.name);
+            const source = obTools.find(tool => nativeToolSourceKey(tool) === bundle.realToolSourceMap.get(call.name));
+            const server = obServers.find(server => server.enabled && server.id === source?.sourceId);
+            let content: string;
+            if (loader) {
+                expandedSources = touchNativeExpandedToolSource(expandedSources, loader.sourceKey);
+                content = formatNativeLoaderToolResult(loader.label);
+                options?.onToolNotice?.(`✓ ${content}`);
+            } else {
+                options?.onToolNotice?.(`${character.name} 正在调用 OB · ${name || call.name}…`);
+                const outcome = server && name && source?.mcpTools?.some(tool => tool.name === name)
+                    ? await executeMcpTool(server, name, call.args, options?.signal, true)
+                    : { name: call.name, success: false, error: "线下模式仅允许调用已提供的 OB 工具。" };
+                failed ||= !outcome.success;
+                content = formatNativeChatToolResult(outcome);
+                throwIfAborted(options?.signal);
+                options?.onToolNotice?.(outcome.success
+                    ? `✓ OB · ${outcome.name} 执行成功`
+                    : `✗ OB · ${outcome.name}：${outcome.error || "调用失败"}`);
+            }
+            requestMessages.push({ role: "tool", name: call.name, toolCallId: call.id, content });
+        }
+        if (failed) break;
+    }
+
+    if (rawOutput === undefined && streaming) {
         // 线下流式：正文边生成边通过 onStreamDelta 交给 UI 做实时预览；
         // 摘要补提仍走整段请求（输出短，无需流式）。
-        const streamResult = await sendLLMStreamRequest(config, preset, llmMessages, regexes, meta, {
+        const streamResult = await sendLLMStreamRequest(config, preset, requestMessages, regexes, meta, {
             appId: "chat",
             appTags: ["chat", "offline"],
             debugSessionId: session.id,
             signal: options?.signal,
         }, {
-            onDelta: (text) => options.onStreamDelta?.(text),
+            onDelta: (text) => options?.onStreamDelta?.(text),
             onReasoningDelta: (t) => { reasoning += t; },
         });
         rawOutput = streamResult.content;
-    } else {
-        rawOutput = await sendLLMRequest(config, preset, llmMessages, regexes, meta, requestOptions);
+    } else if (rawOutput === undefined) {
+        rawOutput = await sendLLMRequest(config, preset, requestMessages, regexes, meta, requestOptions);
     }
     // 剔除预设配置的文本片段（<思考结束> 等残留标签），不进入记录/提示词
     rawOutput = stripPresetTexts(rawOutput, preset);
