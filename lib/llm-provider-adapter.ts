@@ -504,6 +504,7 @@ function buildOpenAICompatibleRequest(
                     tool_calls: message.toolCalls.map((call) => ({
                         id: call.id,
                         type: "function",
+                        ...(call.thoughtSignature ? { extra_content: { google: { thought_signature: call.thoughtSignature } } } : {}),
                         function: {
                             name: call.name,
                             arguments: JSON.stringify(call.args),
@@ -780,7 +781,13 @@ function parseOpenAIToolCall(value: unknown): LlmToolCall {
         id: String(call.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
         name,
         args: parseStrictArgs(argsText),
+        ...openAIThoughtSignature(value),
     };
+}
+
+function openAIThoughtSignature(value: unknown): { thoughtSignature?: string } {
+    const signature = asRecord(asRecord(asRecord(value).extra_content).google).thought_signature;
+    return typeof signature === "string" && signature ? { thoughtSignature: signature } : {};
 }
 
 function parseAnthropicResponse(data: unknown): LlmParsedResponse {
@@ -871,6 +878,7 @@ function parseOpenAICompatibleStreamDelta(data: unknown): LlmStreamDelta {
                 id: item.id,
                 name: item.function?.name,
                 argsText: item.function?.arguments,
+                ...openAIThoughtSignature(value),
             };
         })
         : undefined;

@@ -23,11 +23,15 @@ const request = (body, custom = headers) => new Request('https://example.test/ap
 const body = { model: process.env.VERTEX_MODEL, messages: [{role:'user',content:'hello'}] };
 const route = compile('app/api/vertex/v1/chat/completions/route.ts', { '@/lib/server/vertex-client': {...client, vertexAccessToken: async () => 'mock-google-token'} });
 const models = compile('app/api/vertex/v1/models/route.ts', { '@/lib/server/vertex-client': client });
+const adapter = compile('lib/llm-provider-adapter.ts', {
+  './api-helpers': compile('lib/api-helpers.ts', {'./api-log-store': {pushApiLog() {}}}),
+  './generation-parameters': compile('lib/generation-parameters.ts'),
+});
 (async () => {
   assert.equal((await route.POST(request(body, {}))).status, 401);
   assert.equal((await route.POST(request(body, {...headers, origin:'https://evil.test'}))).status, 403);
   assert.equal((await route.POST(request({...body,model:'google/other'}))).status,400);
-  assert.equal((await route.POST(request({...body,tools:[]}))).status,400);
+  assert.equal((await route.POST(request({...body,tools:[{type:'invalid'}]}))).status,400);
   assert.equal((await route.POST(request({...body,max_tokens:999999}))).status,400);
   assert.equal((await route.POST(request({...body,messages:[{role:'user',content:'x'.repeat(1024*1024)}]}))).status,413);
   const malformed = new Request('https://example.test', {method:'POST',headers,body:'{'});
@@ -55,5 +59,23 @@ const models = compile('app/api/vertex/v1/models/route.ts', { '@/lib/server/vert
   const denied = await route.POST(request(body));
   assert.equal(denied.status,502); assert.doesNotMatch(await denied.text(),/private upstream detail/);
   assert.equal(calls,2);
+  const signature = 'opaque-test-signature';
+  const toolCall = {id:'call_1',type:'function',function:{name:'ombre_search',arguments:'{"query":"memory"}'},extra_content:{google:{thought_signature:signature}}};
+  const parsed = adapter.parseProviderResponse('openai-compatible',{choices:[{message:{content:null,tool_calls:[toolCall]}}]});
+  assert.equal(parsed.toolCalls[0].thoughtSignature,signature);
+  const delta1 = adapter.parseProviderStreamDelta('openai-compatible',{choices:[{delta:{tool_calls:[{...toolCall,index:0,function:{name:'ombre_search',arguments:'{"query":'}}]}}]});
+  const delta2 = adapter.parseProviderStreamDelta('openai-compatible',{choices:[{delta:{tool_calls:[{index:0,function:{arguments:'"memory"}'}}]}}]});
+  assert.equal(delta1.toolCallDeltas[0].thoughtSignature,signature);
+  assert.deepEqual(JSON.parse(delta1.toolCallDeltas[0].argsText+delta2.toolCallDeltas[0].argsText),{query:'memory'});
+  const config={provider:'Custom',baseUrl:'https://example.test/api/vertex/v1',apiKey:'test',defaultModel:body.model,enableNativeTools:true,enableImageRecognition:false};
+  const replay=adapter.buildProviderRequest(config,null,[{role:'user',content:'search memory'},{role:'assistant',content:'',toolCalls:parsed.toolCalls},{role:'tool',toolCallId:'call_1',name:'ombre_search',content:'found memory'}],{tools:[{name:'ombre_search',description:'Search memories',parameters:{type:'object',properties:{query:{type:'string'}}}}],stream:true});
+  const forwarded=client.vertexPayload(replay.body,body.model);
+  assert.equal(forwarded.messages[1].tool_calls[0].extra_content.google.thought_signature,signature);
+  assert.equal(forwarded.messages[2].tool_call_id,'call_1');
+  assert.equal(forwarded.tools[0].function.name,'ombre_search');
+  global.fetch=async (_,options)=>{const data=JSON.parse(options.body);assert.equal(data.messages[1].tool_calls[0].extra_content.google.thought_signature,signature);return new Response('data: {"choices":[{"delta":{"content":"记忆已找到"}}]}\n\ndata: [DONE]\n\n')};
+  const reply=await route.POST(request(replay.body));
+  assert.equal(reply.status,200);assert.match(await reply.text(),/记忆已找到/);
+  console.log('PASS: tool definitions, fragmented arguments, signature parsing/replay, tool results and second-round SSE');
   console.log('PASS: auth, origin, model, tools, tokens, body size, malformed JSON, models, JSON, SSE, cancellation, error redaction');
 })().catch(e=>{console.error(e);process.exitCode=1});

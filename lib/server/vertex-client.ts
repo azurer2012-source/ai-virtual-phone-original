@@ -79,15 +79,35 @@ export async function readVertexBody(request: Request): Promise<Record<string, u
 export function vertexPayload(body: Record<string, unknown>, model: string) {
   if (body.model !== model) throw new VertexError("模型不在服务器允许范围内");
   if (!Array.isArray(body.messages) || body.messages.length === 0 || body.messages.length > 500) throw new VertexError("消息数量必须为 1–500");
-  if (body.tools || body.tool_choice) throw new VertexError("请先关闭原生工具调用；此版本仅接入文本聊天");
   const messages = body.messages.map((m: unknown) => {
     if (!m || typeof m !== "object") throw new VertexError("消息格式无效");
     const item = m as Record<string, unknown>;
-    if (!["system", "user", "assistant"].includes(String(item.role)) || typeof item.content !== "string") throw new VertexError("此版本仅支持文本消息");
-    return { role: item.role, content: item.content };
+    const calls = item.role === "assistant" && Array.isArray(item.tool_calls) ? item.tool_calls.map((value: unknown) => {
+      const call = value as Record<string, unknown> | null;
+      const fn = call?.function as Record<string, unknown> | undefined;
+      if (!call || call.type !== "function" || typeof call.id !== "string" || !call.id || !fn || typeof fn.name !== "string" || typeof fn.arguments !== "string") throw new VertexError("工具调用格式无效");
+      return { id: call.id, type: "function", function: { name: fn.name, arguments: fn.arguments }, ...(call.extra_content ? { extra_content: call.extra_content } : {}) };
+    }) : undefined;
+    if (!["system", "user", "assistant", "tool"].includes(String(item.role)) || (typeof item.content !== "string" && !(calls?.length && item.content === null))) throw new VertexError("仅支持文本和工具消息");
+    if (item.role === "tool" && (typeof item.tool_call_id !== "string" || !item.tool_call_id)) throw new VertexError("工具结果缺少调用 ID");
+    return { role: item.role, content: item.content, ...(calls ? { tool_calls: calls } : {}), ...(item.role === "tool" ? { tool_call_id: item.tool_call_id } : {}) };
   });
   if (body.stream !== undefined && typeof body.stream !== "boolean") throw new VertexError("stream 必须为布尔值");
   const result: Record<string, unknown> = { model, messages, stream: body.stream === true, max_tokens: 4096 };
+  if (body.tools !== undefined) {
+    if (!Array.isArray(body.tools) || body.tools.length > 128) throw new VertexError("工具列表格式无效或超过 128 个");
+    result.tools = body.tools.map((value: unknown) => {
+      const tool = value as Record<string, unknown> | null;
+      const fn = tool?.function as Record<string, unknown> | undefined;
+      if (!tool || tool.type !== "function" || !fn || typeof fn.name !== "string" || !/^[a-zA-Z_][a-zA-Z0-9_.:-]{0,63}$/.test(fn.name)) throw new VertexError("工具定义无效");
+      if (fn.parameters !== undefined && (!fn.parameters || typeof fn.parameters !== "object" || Array.isArray(fn.parameters))) throw new VertexError("工具参数 schema 无效");
+      return { type: "function", function: { name: fn.name, ...(typeof fn.description === "string" ? { description: fn.description } : {}), ...(fn.parameters ? { parameters: fn.parameters } : {}) } };
+    });
+  }
+  if (body.tool_choice !== undefined) {
+    if (!["auto", "none", "required"].includes(String(body.tool_choice))) throw new VertexError("不支持的 tool_choice");
+    result.tool_choice = body.tool_choice;
+  }
   for (const [key, min, max] of [["temperature", 0, 2], ["top_p", 0, 1], ["max_tokens", 1, 8192]] as const) {
     const value = body[key];
     if (value === undefined) continue;
