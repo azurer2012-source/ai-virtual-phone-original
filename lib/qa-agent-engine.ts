@@ -377,6 +377,7 @@ async function requestQaCompletion(
         logQaCall({ model: apiConfig.defaultModel, messages: streamRequest.messagesForLog, rawResponse: result.content, reasoning: result.reasoning });
         return result;
     } catch (streamError) {
+        if (streamError instanceof Error && /^(?:API Stream|API Tool Stream Error) 429:/.test(streamError.message)) throw streamError;
         if (options?.signal?.aborted) throw streamError;
         await options?.callbacks?.onStreamFallback?.(formatQaErrorMessage(streamError));
         const request = buildProviderRequest(apiConfig, null, messages, { maxTokens });
@@ -748,6 +749,7 @@ async function callQaAgentNative(apiConfig: ApiConfig, history: QaEngineMessage[
                 },
             );
         } catch (streamError) {
+            if (streamError instanceof Error && /^(?:API Stream|API Tool Stream Error) 429:/.test(streamError.message)) throw streamError;
             if (options?.signal?.aborted) throw streamError;
             await callbacks?.onStreamFallback?.(formatQaErrorMessage(streamError));
             const fallbackRequest = buildProviderRequest(apiConfig, null, messages, { tools, maxTokens: getQaMaxOutputTokens() ?? undefined });

@@ -809,6 +809,7 @@ function ApiLogViewer({ onBack }: { onBack: () => void }) {
                                                         </div>
                                                     </>
                                                 )}
+                                                {log.streamEnd && <div className="mt-3">{log.streamEnd.requestId && <span>请求编号 {log.streamEnd.requestId} · </span>}流式结束原因 {log.streamEnd.finishReason ?? "未收到"} · [DONE] {log.streamEnd.doneMarker ? "已收到" : "未收到"} · 请求输出上限 {log.streamEnd.requestedMaxTokens ?? "未发送"} · 耗时 {(log.streamEnd.elapsedMs / 1000).toFixed(1)} 秒</div>}
                                                 <div className="font-bold mt-3 mb-[6px] text-[var(--c-danger)]">AI 原始回复</div>
                                                 <div className="api-log-response whitespace-pre-wrap break-all leading-[1.4]">
                                                     {log.rawResponse}

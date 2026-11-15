@@ -1680,6 +1680,7 @@ function QaApiLogSheet({ onClose, onNotice }: { onClose: () => void; onNotice?: 
                               <pre className="qa-log-response">{log.reasoning}</pre>
                             </>
                           )}
+                          {log.streamEnd && <div>{log.streamEnd.requestId && <span>请求编号 {log.streamEnd.requestId} · </span>}流式结束原因 {log.streamEnd.finishReason ?? "未收到"} · [DONE] {log.streamEnd.doneMarker ? "已收到" : "未收到"} · 请求输出上限 {log.streamEnd.requestedMaxTokens ?? "未发送"} · 耗时 {(log.streamEnd.elapsedMs / 1000).toFixed(1)} 秒</div>}
                           <div className="qa-log-label is-danger">AI 原始回复</div>
                           <pre className="qa-log-response">{log.rawResponse}</pre>
                         </div>

@@ -11,6 +11,7 @@ export type DebugInfo = {
     model?: string;
     messages: { role: string; content: string; marker?: string }[];
     rawResponse: string;
+    streamEnd?: { requestId?: string; finishReason?: string; doneMarker: boolean; requestedMaxTokens?: number; elapsedMs: number };
     timestamp: string;
     usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
     /** 模型思维链（reasoning/CoT）原文，独立于回复内容存储，避免被清洗吞掉 */

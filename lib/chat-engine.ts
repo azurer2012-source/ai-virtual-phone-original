@@ -724,13 +724,15 @@ async function readSseStream(
     providerKind: ChatCompletionStreamResult["providerKind"],
     callbacks?: ChatCompletionStreamCallbacks,
     stripTimestamps = true,
-): Promise<{ content: string; rawResponse: string }> {
+): Promise<{ content: string; rawResponse: string; finishReason?: string; doneMarker: boolean }> {
     if (!response.body) throw new ChatEngineError("流式响应没有 body。");
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
     let content = "";
     let rawResponse = "";
+    let finishReason: string | undefined;
+    let doneMarker = false;
     // 时间戳剥离器会一直扣住流尾巴的 64 个字符等括号闭合，流结束才吐出来。
     // 要求"所见即模型所写"的调用方（独家特调）把它整个关掉：增量来一个字出一个字，
     // 否则模型在末尾写机括标记行（〔记〕这类）时，整行都压在扣留窗里，看起来像卡死。
@@ -741,6 +743,8 @@ async function readSseStream(
     // 容错解析：中转把长 JSON 行切开时做碎片重组，不再静默丢增量（见 sse-json.ts）
     const sseParser = createSseJsonParser();
     const handleParsed = async (parsed: unknown) => {
+        const reason = extractFinishReason(parsed as Record<string, unknown>);
+        if (typeof reason === "string" && reason) finishReason = reason.slice(0, 80);
         const parts = parseProviderStreamDelta(providerKind, parsed);
         if (parts.reasoning) {
             await callbacks?.onReasoningDelta?.(parts.reasoning);
@@ -754,6 +758,7 @@ async function readSseStream(
         }
     };
     const handleEvent = async (eventText: string) => {
+        if (eventText.split("\n").some(line => /^data:\s*\[DONE\]\s*$/.test(line))) doneMarker = true;
         // 原始流只为调试快照保留头部：长输出整条累积会把低内存设备的 WebView 顶爆
         if (rawResponse.length < 65_536) rawResponse += `${eventText}\n`;
         for (const parsed of sseParser.pushEvent(eventText)) {
@@ -783,7 +788,7 @@ async function readSseStream(
         content += finalContent;
         await callbacks?.onDelta?.(finalContent);
     }
-    return { content, rawResponse };
+    return { content, rawResponse, finishReason, doneMarker };
 }
 
 export async function sendLLMStreamRequest(
@@ -824,10 +829,12 @@ export async function sendLLMStreamRequest(
     const detachExternalAbort = attachExternalAbort(llmAbort, options?.signal);
 
     try {
+        const startedAt = Date.now();
         const response = await fetchLlmPayload(request, { signal: llmAbort.signal });
         if (!response.ok) {
             const errorText = await response.text();
-            throw new ChatEngineError(`API Stream Error ${response.status}: ${errorText}`);
+            const requestId = response.headers.get("x-float-request-id");
+            throw new ChatEngineError(`API Stream Error ${response.status}: ${errorText}${requestId ? `（请求编号 ${requestId}）` : ""}`);
         }
         // 流式路径收集思维链原文：readSseStream 只通过 onReasoningDelta 回调透传，
         // 不额外包一层的话日志里就只有清洗后的回复正文，思维链被吞。
@@ -840,7 +847,8 @@ export async function sendLLMStreamRequest(
                 await (pluginCallbacks ?? callbacks)?.onReasoningDelta?.(text);
             },
         };
-        const { content: streamedContent, rawResponse } = await readSseStream(response, request.providerKind, streamLogCallbacks, !options?.skipTimestampStrip);
+        const { content: streamedContent, rawResponse, finishReason, doneMarker } = await readSseStream(response, request.providerKind, streamLogCallbacks, !options?.skipTimestampStrip);
+        const elapsedMs = Date.now() - startedAt;
         if (!streamedContent.trim()) {
             throw new ChatEngineError("流式响应没有解析到文本增量。");
         }
@@ -863,6 +871,11 @@ export async function sendLLMStreamRequest(
             model: config.defaultModel,
             messages: sanitizedMessages,
             rawResponse: rawOutput,
+            streamEnd: {
+                requestId: response.headers.get("x-float-request-id") ?? undefined, finishReason, doneMarker, elapsedMs,
+                requestedMaxTokens: [request.body.max_tokens, (request.body.generationConfig as { maxOutputTokens?: unknown } | undefined)?.maxOutputTokens]
+                    .find((value): value is number => typeof value === "number"),
+            },
             reasoning: streamedReasoning.trim() || undefined,
         });
 
@@ -1157,6 +1170,9 @@ export async function sendLLMToolStreamRequest(
     const llmTimeout = setTimeout(() => llmAbort.abort(), 500_000);
     const detachExternalAbort = attachExternalAbort(llmAbort, options?.signal);
     let rawResponse = "";
+    let finishReason: string | undefined;
+    let doneMarker = false;
+    const startedAt = Date.now();
     let content = "";
     let reasoning = "";
     const contentStripper = createStreamingTimestampStripper();
@@ -1168,7 +1184,8 @@ export async function sendLLMToolStreamRequest(
 
         if (!response.ok) {
             const errorText = await response.text();
-            throw new ChatEngineError(`API Tool Stream Error ${response.status}: ${errorText}`);
+            const requestId = response.headers.get("x-float-request-id");
+            throw new ChatEngineError(`API Tool Stream Error ${response.status}: ${errorText}${requestId ? `（请求编号 ${requestId}）` : ""}`);
         }
         if (!response.body) throw new ChatEngineError("原生动作流式响应没有 body。");
 
@@ -1179,6 +1196,8 @@ export async function sendLLMToolStreamRequest(
         // 不再因单行 JSON Parse error 杀掉整条流（写 APP 大参数时高发）
         const sseParser = createSseJsonParser();
         const handleParsedDelta = async (data: unknown) => {
+            const reason = extractFinishReason(data as Record<string, unknown>);
+            if (typeof reason === "string" && reason) finishReason = reason.slice(0, 80);
             {
                     const delta = parseProviderStreamDelta(request.providerKind, data);
                     if (delta.reasoning) {
@@ -1220,6 +1239,7 @@ export async function sendLLMToolStreamRequest(
             const parsed = parseSseEvents(buffer);
             buffer = parsed.rest;
             for (const event of parsed.events) {
+                if (event.split("\n").some(line => /^data:\s*\[DONE\]\s*$/.test(line))) doneMarker = true;
                 if (rawResponse.length < 65_536) rawResponse += `${event}\n`;
                 for (const data of sseParser.pushEvent(event)) {
                     await handleParsedDelta(data);
@@ -1227,7 +1247,9 @@ export async function sendLLMToolStreamRequest(
             }
         }
 
+        buffer += decoder.decode();
         if (buffer.trim()) {
+            if (buffer.split("\n").some(line => /^data:\s*\[DONE\]\s*$/.test(line))) doneMarker = true;
             if (rawResponse.length < 65_536) rawResponse += buffer.trim();
             for (const data of sseParser.pushEvent(buffer)) {
                 await handleParsedDelta(data);
@@ -1255,6 +1277,7 @@ export async function sendLLMToolStreamRequest(
             model: config.defaultModel,
             messages: sanitizedMessages,
             rawResponse: logEntryRaw,
+            streamEnd: { requestId: response.headers.get("x-float-request-id") ?? undefined, finishReason, doneMarker, elapsedMs: Date.now() - startedAt, requestedMaxTokens: [request.body.max_tokens, (request.body.generationConfig as { maxOutputTokens?: unknown } | undefined)?.maxOutputTokens].find((value): value is number => typeof value === "number") },
             reasoning: reasoning || undefined,
         });
 

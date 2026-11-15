@@ -12,7 +12,7 @@ import {
     resolveUserIdentity,
 } from "./settings-storage";
 import { assemblePromptPayload, type LLMMessage } from "./llm-prompt-assembler";
-import { previewMessagesForApi, sendLLMRequest } from "./chat-engine";
+import { previewMessagesForApi, sendLLMRequest, sendLLMRequestPreferStream } from "./chat-engine";
 import { loadMemoryConfig } from "./memory-storage";
 import { retrieveCoreMemoriesForPrompt, retrieveMemoriesForPrompt } from "./memory-service";
 import { formatCoreMemories, formatLongTermMemories } from "./memory-injector";
@@ -315,7 +315,7 @@ export async function generateItemHtml(
             undefined,
             { dwellingRoom: roomName, dwellingFurniture: furnitureLabel, dwellingItem: itemName, dwellingItemPreview: itemPreview },
         );
-        const rawOutput = await sendLLMRequest(apiConfig, preset, llmMessages, regexes, {
+        const rawOutput = await sendLLMRequestPreferStream(apiConfig, preset, llmMessages, regexes, {
             characterName: loadCharacters().find(c => c.id === characterId)?.name,
         }, {
             appId: "dwelling",
