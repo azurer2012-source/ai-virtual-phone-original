@@ -142,6 +142,7 @@ export type ToolResult = {
 import { extractBase64Blocks, storeMediaBase64, storeMediaBlob, detectMediaType, MEDIA_STORE_PROTOCOL } from "./media-cache-storage";
 
 const MAX_RESULT_LENGTH = 2000;
+const MAX_OB_DREAM_RESULT_LENGTH = 12000;
 const PROXY_URL = "/api/tool-proxy";
 
 const MIN_B64_MEDIA_LENGTH = 500;
@@ -4217,7 +4218,13 @@ export function startObWriteRetries() {
 }
 
 export async function executeMcpTool(server: McpServerConfig, toolName: string, args: Record<string, unknown>, signal?: AbortSignal, retryUnsentWrite = false): Promise<ToolResult> {
-    const obWrite = obWrites.has(toolName) && isOmbreToolset(server.discoveredTools || []);
+    const isOmbre = isOmbreToolset(server.discoveredTools || []);
+    const obWrite = obWrites.has(toolName) && isOmbre;
+    const isObDream = isOmbre && toolName === 'dream';
+    // OB hold accepts comma-separated tags, even when the model emits a list.
+    if (obWrite && toolName === 'hold' && Array.isArray(args.tags) && args.tags.every(tag => typeof tag === 'string')) {
+        args = { ...args, tags: args.tags.join(',') };
+    }
     try {
         throwIfAborted(signal);
         // Ensure initialized
@@ -4255,21 +4262,21 @@ export async function executeMcpTool(server: McpServerConfig, toolName: string, 
             if (retry.error) {
                 return { name: toolName, success: false, error: retry.error.message };
             }
-            return await extractMcpToolResult(toolName, retry.result, signal);
+            return await extractMcpToolResult(toolName, retry.result, signal, isObDream);
         }
 
         if (res.error) {
             return { name: toolName, success: false, error: res.error.message };
         }
 
-        return await extractMcpToolResult(toolName, res.result, signal);
+        return await extractMcpToolResult(toolName, res.result, signal, isObDream);
     } catch (err) {
         if (isAbortError(err)) throw err;
         return { name: toolName, success: false, error: String(err) };
     }
 }
 
-async function extractMcpToolResult(toolName: string, result: unknown, signal?: AbortSignal): Promise<ToolResult> {
+async function extractMcpToolResult(toolName: string, result: unknown, signal?: AbortSignal, isObDream = false): Promise<ToolResult> {
     throwIfAborted(signal);
     const r = result as { isError?: boolean; content?: { type?: string; text?: string; data?: string; mimeType?: string }[] } | undefined;
     if (r?.isError) {
@@ -4297,7 +4304,14 @@ async function extractMcpToolResult(toolName: string, result: unknown, signal?: 
     const { text: processed, attachments: b64Attachments } = await replaceBase64WithRefs(data, signal);
     const allAttachments = [...mcpAttachments, ...b64Attachments];
 
-    const toolResult: ToolResult = { name: toolName, success: true, data: truncate(processed) };
+    let toolText = processed;
+    if (!isObDream) {
+        toolText = truncate(processed);
+    } else if (processed.length > MAX_OB_DREAM_RESULT_LENGTH) {
+        const notice = '\n[Float 已截断梦的结果，后续内容没有传给模型。可缩短 dream 的时间范围后再查看。]';
+        toolText = processed.slice(0, MAX_OB_DREAM_RESULT_LENGTH - notice.length) + notice;
+    }
+    const toolResult: ToolResult = { name: toolName, success: true, data: toolText };
     if (allAttachments.length > 0) {
         toolResult.mediaAttachments = allAttachments;
         const labels = allAttachments.map(a => ({ audio: "音频", image: "图片", video: "视频", file: "文件" })[a.type] || "文件");

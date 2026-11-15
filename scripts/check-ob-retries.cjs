@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const source = fs.readFileSync(path.join(root,'lib/tool-executor.ts'),'utf8');
 const section = source.slice(source.indexOf("const OB_RETRY_KEY ="),source.indexOf('async function extractMcpToolResult'));
 let now=0, initOk=false, sent=0, interval, visible='visible';
-let sendError;
+let sendError, sentArgs;
 const store=new Map();
 const server={id:'ob',enabled:true,url:'https://ob.test',discoveredTools:['hold','grow','trace','pulse','breath'].map(name=>({name}))};
 const context={exports:{},Date:{now:()=>now},JSON,Set,Map,crypto:require('node:crypto').webcrypto,AbortSignal,
@@ -17,7 +17,7 @@ const context={exports:{},Date:{now:()=>now},JSON,Set,Map,crypto:require('node:c
   window:{setInterval:fn=>{interval=fn;return 1},clearInterval(){},addEventListener(){},removeEventListener(){},dispatchEvent(){}},
   CustomEvent:class {},loadMcpServers:()=>[server],isOmbreToolset:()=>true,
   throwIfAborted:s=>s?.throwIfAborted(),mcpInitialize:async()=>({success:initOk}),isSseUrl:()=>false,
-  getMcpSessionHeaders:()=>({}),mcpRequest:async()=>{sent++;return sendError?{error:sendError}:{result:{}}},
+  getMcpSessionHeaders:()=>({}),mcpRequest:async(_url,_method,params)=>{sent++;sentArgs=params.arguments;return sendError?{error:sendError}:{result:{}}},
   _mcpSessions:new Map(),_mcpSseEndpoints:new Map(),isAbortError:e=>e.name==='AbortError',extractMcpToolResult:async()=>({success:true,data:'ok'}),
 };
 vm.runInNewContext(ts.transpileModule(section,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
@@ -44,6 +44,11 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  initOk=false;
  await api.executeMcpTool(server,'grow',{content:'manual'});
  assert.equal(queue().length,0);
+ initOk=true;sendError=undefined;
+ const holdArgs={tags:['守夜','清晨十秒']};
+ await api.executeMcpTool(server,'hold',holdArgs);
+ assert.equal(sentArgs.tags,'守夜,清晨十秒');
+ assert.deepEqual(holdArgs.tags,['守夜','清晨十秒']);
  const chat=fs.readFileSync(path.join(root,'lib/chat-engine.ts'),'utf8');
  assert.match(chat,/executeMcpTool\(server, name, call.args, options\?\.signal, true\)/);
  assert.match(source,/executeMcpTool\(server, call.name, call.args, context\?\.signal, true\)/);

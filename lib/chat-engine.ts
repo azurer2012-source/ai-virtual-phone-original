@@ -2,7 +2,7 @@
 
 import { createSseJsonParser } from "./sse-json";
 import { measurePromptRequest } from "./prompt-request-stats";
-import { isOmbreToolset, isCoreMemoryTool } from "./memory-tool-loading";
+import { isOmbreToolset } from "./memory-tool-loading";
 import { maybeAppendShortcutCapability } from "./offline-shortcut-capability";
 import { loadCharacters } from "./character-storage";
 import { buildScreenEffectPromptHint } from "./chat-screen-effects";
@@ -1565,7 +1565,6 @@ export type NativeChatToolBundle = {
 };
 
 type NativeChatToolBuildOptions = {
-    compactMemoryTools?: boolean;
     actorNames?: string[];
     characterName?: string;
     userName?: string;
@@ -1753,14 +1752,14 @@ export function buildNativeChatTools(enabledTools: EnabledTool[], expandedSource
             const sourceKey = nativeToolSourceKey(tool);
             registerTool(tool.name, tool.description, tool.parameterSchema || "{}", sourceKey, tool.usageGuide);
         } else {
-            registerLoader(tool);
+            if (tool.source !== "mcp_server" || !isOmbreToolset(tool.mcpTools || [])) registerLoader(tool);
         }
     }
 
     for (const tool of enabledTools) {
         const sourceKey = nativeToolSourceKey(tool);
-        const compactMemory = options?.compactMemoryTools === true && tool.source === "mcp_server" && isOmbreToolset(tool.mcpTools || []);
-        if (isNativeSingleTool(tool) || (!expanded.has(sourceKey) && !compactMemory)) continue;
+        const isOmbre = tool.source === "mcp_server" && isOmbreToolset(tool.mcpTools || []);
+        if (isNativeSingleTool(tool) || (!expanded.has(sourceKey) && !isOmbre)) continue;
 
         if (tool.source === "rest_package") {
             for (const restTool of tool.restTools || []) {
@@ -1778,7 +1777,6 @@ export function buildNativeChatTools(enabledTools: EnabledTool[], expandedSource
 
         if (tool.source === "mcp_server") {
             for (const mcpTool of tool.mcpTools || []) {
-                if (compactMemory && !isCoreMemoryTool(mcpTool.name)) continue;
                 registerTool(mcpTool.name, mcpTool.description || tool.description, mcpTool.inputSchema || {}, sourceKey);
             }
             continue;
@@ -2111,7 +2109,7 @@ export async function generateOfflineChatCompletion(
             content: "线下回复正文沿用本会话的叙事视角、称呼和输出格式。Ombre Brain 的记忆条目和工具结果仅供参考其中的事实与情景。存档规则只适用于写入记忆的内容，第三人称摘要规则只适用于摘要。正文和角色对白保持当前场景的原有视角与口吻，避免把正在发生的互动改写成第三人称回顾。",
         });
     }
-    const toolBuildOptions = { ...meta, compactMemoryTools: true };
+    const toolBuildOptions = meta;
     let expandedSources: string[] = [];
     let rawOutput: string | undefined;
 
@@ -2262,7 +2260,7 @@ async function generateNativeChatCompletion(
         characterName: character.name,
         userName: userIdentity?.name ?? "用户",
     };
-    let nativeBundle = buildNativeChatTools(enabledTools, expandedSourceIds, { ...nativeToolBuildOptions, compactMemoryTools: true });
+    let nativeBundle = buildNativeChatTools(enabledTools, expandedSourceIds, nativeToolBuildOptions);
     const requestMessages: LlmRequestMessage[] = toLlmRequestMessages(llmMessages);
     const parts: ChatCompletionPart[] = [];
     const meta = { characterName: character.name, userName: userIdentity?.name };
@@ -3149,7 +3147,6 @@ export async function previewPromptRequestSnapshot(
             enabledTools,
         );
         const nativeBundle = buildNativeChatTools(enabledTools, expandedSourceIds, {
-            compactMemoryTools: true,
             characterName: character.name,
             userName: userIdentity?.name ?? "用户",
         });
