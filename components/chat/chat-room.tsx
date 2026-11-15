@@ -29,6 +29,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 import { createPortal } from "react-dom";
+import { createChatShareImage } from "@/lib/chat-share-image";
 
 import { loadCharacters } from "@/lib/character-storage";
 import { Character } from "@/lib/character-types";
@@ -1312,6 +1313,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
     const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
     const [offlineFavoriteSelection, setOfflineFavoriteSelection] = useState<Set<string> | null>(null);
+    const [shareImage, setShareImage] = useState<{ url: string; file: File } | null>(null);
+    const [shareSaveError, setShareSaveError] = useState(false);
+    const [sharingImage, setSharingImage] = useState(false);
+    useEffect(() => () => {
+        if (shareImage) URL.revokeObjectURL(shareImage.url);
+    }, [shareImage]);
     useEffect(() => { setOfflineFavoriteSelection(null); }, [session.id, offlineMode]);
     const [showConfirmMultiDelete, setShowConfirmMultiDelete] = useState(false);
     const [expandedMonologueId, setExpandedThinkingId] = useState<string | null>(null);
@@ -2686,6 +2693,39 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
     const clearChatToast = () => {
         clearTimeout(chatToastTimer.current);
         setChatToast(null);
+    };
+
+    const shareSelectedMessages = async () => {
+        const selected = offlineMode ? offlineFavoriteSelection : selectedMessageIds;
+        const limit = offlineMode ? 10 : 20;
+        if (!selected?.size || !scrollRef.current || sharingImage) return;
+        if (selected.size > limit) {
+            showChatToast(`分享最多 ${limit} 条，请取消勾选多余消息`);
+            return;
+        }
+        const list = scrollRef.current;
+        const rows = Array.from(list.querySelectorAll<HTMLElement>("[data-chat-share-id]"))
+            .filter(row => selected.has(row.dataset.chatShareId || "") && row.getClientRects().length > 0);
+        if (new Set(rows.map(row => row.dataset.chatShareId)).size !== selected.size) {
+            showChatToast("部分选中消息未显示，请加载后再分享");
+            return;
+        }
+        setSharingImage(true);
+        try {
+            const width = Math.max(...rows.map(row => row.getBoundingClientRect().width));
+            const blob = await createChatShareImage(rows, Math.min(480, Math.max(320, Math.round(width + 32))));
+            const sequenceKey = "float-chat-share-sequence";
+            const sequence = (Number.parseInt(localStorage.getItem(sequenceKey) ?? "", 10) || 0) + 1;
+            const filename = `floatchat_${String(sequence).padStart(2, "0")}.jpg`;
+            const file = new File([blob], filename, { type: "image/jpeg" });
+            localStorage.setItem(sequenceKey, String(sequence));
+            setShareSaveError(false);
+            setShareImage({ url: URL.createObjectURL(file), file });
+        } catch {
+            showChatToast("长图生成失败，请重试");
+        } finally {
+            setSharingImage(false);
+        }
     };
 
     const showChatToast = (text: string, duration = 2000) => {
@@ -4902,6 +4942,25 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             setOfflineFavoriteSelection(null); setIsMultiSelectMode(false); setSelectedMessageIds(new Set());
         } catch { showChatToast("收藏失败，请重试"); }
     };
+    const offlineSelectionProps = (key: string): React.HTMLAttributes<HTMLDivElement> => {
+        if (!offlineFavoriteSelection) return {};
+        const toggle = (event: React.SyntheticEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleOfflineFavorite(key);
+        };
+        return {
+            role: "checkbox",
+            tabIndex: 0,
+            "aria-label": key.endsWith(":user") ? "选择用户消息" : "选择角色消息",
+            "aria-checked": offlineFavoriteSelection.has(key),
+            onClickCapture: toggle,
+            onKeyDown: event => {
+                if (event.target === event.currentTarget && (event.key === " " || event.key === "Enter")) toggle(event);
+            },
+        };
+    };
+
     const toggleOfflineFavorite = (key: string) => setOfflineFavoriteSelection(previous => {
         if (!previous) return previous;
         const next = new Set(previous); if (next.has(key)) next.delete(key); else next.add(key); return next;
@@ -5555,13 +5614,12 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                             <div id={`offline-search-${turn.id}`} aria-hidden="true" style={{ height: 4, borderRadius: 2 }} />
                             {showTime && <div className="chat-offline-time">{formatChatUiTime(turn.createdAt)}</div>}
                             <div className="chat-offline-turn">
-                                <div className="chat-offline-entry" data-role="user" style={offlineDisplay.userContent.trim() ? undefined : { display: "none" }}>
+                                <div className="chat-offline-entry" data-role="user" data-chat-share-id={`${turn.id}:user`} {...offlineSelectionProps(`${turn.id}:user`)} style={offlineDisplay.userContent.trim() ? undefined : { display: "none" }}>
                                     {/* 头像占位：默认 display:none（见 chat.css），供自定义 CSS 显示 */}
                                     <div className="chat-offline-avatar" aria-hidden="true">
                                         {userIdentity?.avatarUrl ? <img src={userIdentity.avatarUrl} alt="" /> : <User size={18} color="var(--c-text)" />}
                                     </div>
                                     <div className="chat-offline-label">你</div>
- {offlineFavoriteSelection && <label><input type="checkbox" aria-label="选择用户消息" checked={offlineFavoriteSelection.has(`${turn.id}:user`)} onChange={() => toggleOfflineFavorite(`${turn.id}:user`)} />选择</label>}
                                     <div
                                         className="chat-offline-text"
                                         onPointerDown={(e) => { e.stopPropagation(); if (offlineFavoriteSelection) return; handleOfflinePointerDown(e, { turnId: turn.id, role: "user" }); }}
@@ -5586,7 +5644,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                         />
                                     </div>
                                 </div>
-                                <div className="chat-offline-entry" data-role="assistant">
+                                <div className="chat-offline-entry" data-role="assistant" data-chat-share-id={`${turn.id}:assistant`} {...offlineSelectionProps(`${turn.id}:assistant`)}>
                                     {/* 头像占位：默认 display:none（见 chat.css），供自定义 CSS 显示 */}
                                     <div className="chat-offline-avatar" aria-hidden="true">
                                         {character?.avatar ? <img src={character.avatar} alt="" /> : <ChatFallbackAvatar />}
@@ -5594,7 +5652,6 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                     <div className="chat-offline-label-row">
                                         <div className="chat-offline-label">{session.isGroup ? (session.groupName || "群聊") : (character?.name || "对方")}</div>
                                         {offlineObStatuses.has(turn.id) && <span className="offline-ob-progress-badge" style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--c-icon, #8b8f97)', border: '1px solid var(--c-icon, #8b8f97)', borderRadius: 5, padding: '2px 5px', whiteSpace: 'nowrap' }}>{offlineObStatuses.get(turn.id)}</span>}
-                                        {offlineFavoriteSelection && <label><input type="checkbox" aria-label="选择角色消息" checked={offlineFavoriteSelection.has(`${turn.id}:assistant`)} onChange={() => toggleOfflineFavorite(`${turn.id}:assistant`)} />选择</label>}
                                         {assistantHasHtmlPreview ? (
                                             <button
                                                 type="button"
@@ -5935,6 +5992,7 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                             )}
                             <div
                                 id={`message-${msg.id}`}
+                                data-chat-share-id={selectableStoredId}
                                 className="chat-msg-wrapper"
                                 data-role={uiRole(msg)}
                                 {...(isEmptyBubble && renderMsg.reasoningText ? { "data-reasoning-empty": "" } : {})}
@@ -6267,10 +6325,34 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
             </div>
 
             {/* Input Bar — absolute at bottom, same layer as header */}
+            {shareImage && createPortal(
+                <div role="dialog" aria-modal="true" aria-label="聊天长图预览" className="fixed inset-0 z-[10000] flex flex-col items-center gap-3 bg-black/70 p-4">
+                    <div className="flex shrink-0 gap-4 rounded-xl bg-white px-4 py-2 text-gray-900">
+                        <button type="button" onClick={() => setShareImage(null)}>关闭</button>
+                        <a href={shareImage.url} download={shareImage.file.name}>下载 JPG</a>
+                        {navigator.canShare?.({ files: [shareImage.file] }) && (
+                            <button type="button" onClick={() => {
+                                setShareSaveError(false);
+                                void navigator.share({ files: [shareImage.file] }).catch((error: unknown) => {
+                                    if (!(error instanceof Error) || error.name !== "AbortError") {
+                                        setShareSaveError(true);
+                                    }
+                                });
+                            }}>保存或分享</button>
+                        )}
+                    </div>
+                    {shareSaveError && <p role="alert" className="shrink-0 rounded-lg bg-white px-3 py-2 text-sm text-gray-900">系统分享失败，请使用「下载 JPG」。</p>}
+                    <div className="min-h-0 max-w-full overflow-auto">
+                        <img src={shareImage.url} alt="选中聊天记录的长图" className="h-auto w-full max-w-[480px]" />
+                    </div>
+                </div>,
+                document.body,
+            )}
             {offlineMode && offlineFavoriteSelection && <div className="chat-multi-select-bar chat-room-main-pane" data-ui="multi-select">
                 <button className="chat-multi-select-icon-btn" aria-label="退出多选" onClick={() => setOfflineFavoriteSelection(null)}><X size={20} /></button>
-                <strong>已选 {offlineFavoriteSelection.size} 条</strong>
-                <button className="ui-btn" disabled={!offlineFavoriteSelection.size} onClick={() => void saveFavorite(offlineTurns.flatMap(turn => (["user", "assistant"] as const).filter(role => offlineFavoriteSelection.has(`${turn.id}:${role}`)).map(role => offlineFavoriteSnapshot(turn, role))), "offline")}>收藏</button>
+                <div className="chat-multi-select-summary"><strong>已选 {offlineFavoriteSelection.size} 条</strong></div>
+                <button className="chat-multi-select-action" disabled={!offlineFavoriteSelection.size || sharingImage} onClick={() => void shareSelectedMessages()}>{sharingImage ? "生成中" : "分享"}</button>
+                <button className="chat-multi-select-action" disabled={!offlineFavoriteSelection.size} onClick={() => void saveFavorite(offlineTurns.flatMap(turn => (["user", "assistant"] as const).filter(role => offlineFavoriteSelection.has(`${turn.id}:${role}`)).map(role => offlineFavoriteSnapshot(turn, role))), "offline")}>收藏</button>
             </div>}
             {isMultiSelectMode && !offlineMode && (
                 <div className="chat-multi-select-bar chat-room-main-pane" data-ui="multi-select">
@@ -6285,13 +6367,10 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                     </button>
                     <div className="chat-multi-select-summary">
                         <strong>已选 {selectedMessageIds.size} 条</strong>
-                        <span>
-                            {multiDeleteTargetIds.length > selectedMessageIds.size
-                                ? `实际删除 ${multiDeleteTargetIds.length} 条，含隐藏历史`
-                                : `实际删除 ${multiDeleteTargetIds.length} 条`}
-                        </span>
+                        {multiDeleteTargetIds.length > selectedMessageIds.size && <span title="含隐藏历史">删除涉及 {multiDeleteTargetIds.length} 条</span>}
                     </div>
-                    <button className="ui-btn" disabled={!selectedMessageIds.size} onClick={() => void saveFavorite(loadChatMessages(session.id).filter(message => selectedMessageIds.has(message.id)).sort(compareChatMessages).map(favoriteSnapshot), "online")}>收藏</button>
+                    <button className="chat-multi-select-action" disabled={!selectedMessageIds.size || sharingImage} onClick={() => void shareSelectedMessages()}>{sharingImage ? "生成中" : "分享"}</button>
+                    <button className="chat-multi-select-action" disabled={!selectedMessageIds.size} onClick={() => void saveFavorite(loadChatMessages(session.id).filter(message => selectedMessageIds.has(message.id)).sort(compareChatMessages).map(favoriteSnapshot), "online")}>收藏</button>
                     <button
                         type="button"
                         className="chat-multi-select-delete-btn"
