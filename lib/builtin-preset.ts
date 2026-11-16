@@ -3844,7 +3844,7 @@ export function createBuiltinPreset(): PresetConfig {
                     "- 未变化的物品保持原有 ID，变化或新增的物品使用新 ID",
                     "- 每件家具 2~4 个物品",
                     "",
-                    "输出完整 JSON（和原布局相同格式），保持所有房间和家具的 id/name/description/icon/label/position 不变，只更新 items。",
+                    "按本次刷新请求提供的 JSON 格式输出，只列出需要更新的家具，带上原房间和家具 ID 及更新后的完整 items。",
                     "只输出 JSON，不要其他内容。",
                     "</dwelling_layout_items_instruction>",
                 ].join("\n"),

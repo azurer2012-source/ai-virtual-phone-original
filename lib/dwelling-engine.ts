@@ -219,6 +219,38 @@ export function formatDwellingContext(layout: DwellingLayout, updatedAt: string)
 
 export type DwellingRefreshMode = "full" | "items";
 
+function itemsRefreshInstruction(layout: DwellingLayout): LLMMessage {
+    const inventory = layout.rooms.map(room => ({
+        id: room.id, name: room.name,
+        furniture: room.furniture.map(f => ({ id: f.id, label: f.label, items: f.items })),
+    }));
+    return { role: "user", content: [
+        '执行本次物品刷新。只返回 JSON 对象，格式为 {"rooms":[{"id":"原房间ID","furniture":[{"id":"原家具ID","items":[{"id":"物品ID","name":"名称","preview":"简述"}]}]}]}。',
+        '只列出需要更新的家具。每件列出的家具须返回更新后的完整物品列表。沿用未变物品的 ID，新增或变化的物品使用新 ID。未列出的家具保持原样。没有变化时返回 {"rooms":[]}。',
+        '以下是现有房间、家具和物品。复制其实际房间和家具 ID，直接输出 JSON。',
+        JSON.stringify(inventory),
+    ].join("\n") };
+}
+
+function mergeRefreshedItems(layout: DwellingLayout, rooms: unknown[]): DwellingLayout | null {
+    const copy = structuredClone(layout);
+    let updated = 0;
+    for (const value of rooms) {
+        const patch = value as Partial<DwellingLayout["rooms"][number]> | null;
+        const room = copy.rooms.find(entry => entry.id === patch?.id);
+        if (!room || !Array.isArray(patch?.furniture)) return null;
+        for (const furniture of patch.furniture) {
+            const target = room.furniture.find(entry => entry.id === furniture?.id);
+            if (!target || !Array.isArray(furniture?.items) || !furniture.items.every(item =>
+                item && typeof item.id === "string" && item.id.trim() && typeof item.name === "string" && item.name.trim() && typeof item.preview === "string"
+            )) return null;
+            target.items = furniture.items.map(({ id, name, preview }) => ({ id, name, preview }));
+            updated++;
+        }
+    }
+    return updated || !rooms.length ? copy : null;
+}
+
 export async function generateDwellingLayout(
     characterId: string,
     mode: DwellingRefreshMode = "full",
@@ -238,12 +270,15 @@ export async function generateDwellingLayout(
 
     try {
         const llmMessages = await buildDwellingMessages(characterId, preset, worldBooks, regexes, appTags, dwellingContext);
+        if (mode === "items" && oldCached) llmMessages.push(itemsRefreshInstruction(oldCached.layout));
 
         const rawOutput = await sendLLMRequest(apiConfig, preset, llmMessages, regexes, {
             characterName: loadCharacters().find(c => c.id === characterId)?.name,
         }, {
             appId: "dwelling",
             appTags,
+            signal,
+            skipOutputRegex: mode === "items",
         });
 
         if (!rawOutput) return { layout: null, error: "LLM 返回为空" };
@@ -254,35 +289,22 @@ export async function generateDwellingLayout(
         }
 
         const obj = parsed as Record<string, unknown>;
+        if (mode === "items" && oldCached) {
+            if (!Array.isArray(obj.rooms)) return { layout: null, error: "物品刷新需要返回包含 rooms 数组的 JSON，原布局已保留" };
+            const layout = mergeRefreshedItems(oldCached.layout, obj.rooms);
+            return layout ? { layout } : { layout: null, error: "物品刷新返回了未知的房间或家具 ID，或物品格式不正确，原布局已保留" };
+        }
         if (!Array.isArray(obj.rooms) || obj.rooms.length === 0) {
             return { layout: null, error: "LLM 返回格式不正确（缺少 rooms）" };
         }
 
-        let layout = obj as DwellingLayout;
+        const layout = obj as DwellingLayout;
         // Ensure every room has furniture array, every furniture has items array
         for (const room of layout.rooms) {
             if (!Array.isArray(room.furniture)) room.furniture = [];
             for (const f of room.furniture) {
                 if (!Array.isArray(f.items)) f.items = [];
             }
-        }
-
-        // Items mode: merge new items into old layout structure
-        if (mode === "items" && oldCached) {
-            const oldLayout = structuredClone(oldCached.layout);
-            const newItemsMap = new Map<string, typeof layout.rooms[0]["furniture"][0]["items"]>();
-            for (const room of layout.rooms) {
-                for (const f of room.furniture) {
-                    newItemsMap.set(`${room.id}_${f.id}`, f.items);
-                }
-            }
-            for (const room of oldLayout.rooms) {
-                for (const f of room.furniture) {
-                    const newItems = newItemsMap.get(`${room.id}_${f.id}`);
-                    if (newItems) f.items = newItems;
-                }
-            }
-            layout = oldLayout;
         }
 
         deduplicatePositions(layout.rooms);
@@ -337,6 +359,7 @@ export async function previewDwellingPromptPayload(
     if (!apiConfig) throw new Error("未找到可用的 API 配置");
     const character = loadCharacters().find(c => c.id === characterId);
     const cached = await loadDwellingLayout(characterId);
+    if (mode === "items" && !cached) mode = "full";
     const dwellingContext = cached ? formatDwellingContext(cached.layout, cached.updatedAt) : undefined;
     const appTags = mode === "explore"
         ? ["dwelling", "explore"]
@@ -357,6 +380,7 @@ export async function previewDwellingPromptPayload(
             },
         )
         : await buildDwellingMessages(characterId, preset, worldBooks, regexes, appTags, dwellingContext);
+    if (mode === "items" && cached) llmMessages.push(itemsRefreshInstruction(cached.layout));
 
     return {
         messages: previewMessagesForApi(apiConfig, preset, llmMessages),
