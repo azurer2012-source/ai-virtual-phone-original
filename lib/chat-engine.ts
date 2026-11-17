@@ -2117,8 +2117,13 @@ export async function generateOfflineChatCompletion(
     for (let round = 0; round < 4 && obTools.length > 0; round += 1) {
         throwIfAborted(options?.signal);
         const bundle = buildNativeChatTools(obTools, expandedSources, toolBuildOptions);
-        const result = await sendLLMToolRequest(config, preset, requestMessages, bundle.definitions, regexes, meta, requestOptions);
+        // A streamed response may still turn into a tool call. Buffer it until
+        // we know it is the final offline reply before revealing it in the card.
+        const result = streaming
+            ? await sendLLMToolStreamRequest(config, preset, requestMessages, bundle.definitions, regexes, meta, requestOptions)
+            : await sendLLMToolRequest(config, preset, requestMessages, bundle.definitions, regexes, meta, requestOptions);
         throwIfAborted(options?.signal);
+        if (result.truncatedToolCalls?.length && result.toolCalls.length === 0) break;
         if (result.toolCalls.length === 0) {
             rawOutput = result.content;
             reasoning = result.reasoning || "";
