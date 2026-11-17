@@ -51,6 +51,7 @@ export async function createChatShareImage(rows: HTMLElement[], width: number): 
         }
         if (source instanceof HTMLImageElement && copy instanceof HTMLImageElement) {
             const url = source.currentSrc || source.src;
+            copy.loading = "eager";
             copy.removeAttribute("srcset");
             copy.removeAttribute("src");
             if (url) {
@@ -110,7 +111,21 @@ export async function createChatShareImage(rows: HTMLElement[], width: number): 
     root.style.position = "fixed";
     root.style.left = "-10000px";
     document.body.append(root);
-    const height = Math.ceil(root.getBoundingClientRect().height);
+    const bounds = root.getBoundingClientRect();
+    const height = Math.ceil(bounds.height);
+    // WebKit may omit nested images while rasterizing an SVG foreignObject.
+    const avatars = Array.from(root.querySelectorAll<HTMLImageElement>(".chat-msg-avatar img, .chat-offline-avatar img"))
+        .flatMap(image => {
+            const rect = image.getBoundingClientRect();
+            const computed = getComputedStyle(image);
+            if (!rect.width || !rect.height || computed.visibility !== "visible") return [];
+            const radius = computed.borderTopLeftRadius !== "0px"
+                ? computed.borderTopLeftRadius
+                : getComputedStyle(image.parentElement!).borderTopLeftRadius;
+            const corner = (parseFloat(radius) || 0) * (radius.endsWith("%") ? Math.min(rect.width, rect.height) / 100 : 1);
+            image.style.visibility = "hidden";
+            return [{ image, rect, corner, fit: computed.objectFit, opacity: Number(computed.opacity) }];
+        });
     root.remove();
     root.style.position = "";
     root.style.left = "";
@@ -128,6 +143,22 @@ export async function createChatShareImage(rows: HTMLElement[], width: number): 
     context.fillStyle = "#f3f4f6";
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    context.scale(canvas.width / width, canvas.height / height);
+    for (const { image, rect, corner, fit, opacity } of avatars) {
+        const x = rect.left - bounds.left;
+        const y = rect.top - bounds.top;
+        const ratios = [rect.width / image.naturalWidth, rect.height / image.naturalHeight];
+        const factor = fit === "contain" ? Math.min(...ratios) : Math.max(...ratios);
+        const drawWidth = fit === "fill" ? rect.width : image.naturalWidth * factor;
+        const drawHeight = fit === "fill" ? rect.height : image.naturalHeight * factor;
+        context.save();
+        context.globalAlpha = opacity;
+        context.beginPath();
+        context.roundRect(x, y, rect.width, rect.height, corner);
+        context.clip();
+        context.drawImage(image, x + (rect.width - drawWidth) / 2, y + (rect.height - drawHeight) / 2, drawWidth, drawHeight);
+        context.restore();
+    }
     return new Promise((resolve, reject) => {
         canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("无法导出 JPG")), "image/jpeg", 0.88);
     });

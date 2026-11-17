@@ -6326,8 +6326,13 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
 
             {/* Input Bar — absolute at bottom, same layer as header */}
             {shareImage && createPortal(
-                <div role="dialog" aria-modal="true" aria-label="聊天长图预览" className="fixed inset-0 z-[10000] flex flex-col items-center gap-3 bg-black/70 p-4">
-                    <div className="flex shrink-0 gap-4 rounded-xl bg-white px-4 py-2 text-gray-900">
+                <div role="dialog" aria-modal="true" aria-label="聊天长图预览" className="fixed inset-0 z-[10000] flex flex-col items-center gap-3 bg-black/70 px-4"
+                    style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 16px)", paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+                    <div className="flex min-h-0 w-full flex-1 justify-center overflow-auto">
+                        <img src={shareImage.url} alt="选中聊天记录的长图" className="block h-auto w-full max-w-[480px] self-start" />
+                    </div>
+                    {shareSaveError && <p role="alert" className="shrink-0 rounded-lg bg-white px-3 py-2 text-sm text-gray-900">系统分享失败，请使用「下载 JPG」。</p>}
+                    <div className="flex min-h-[44px] shrink-0 items-center gap-4 rounded-xl bg-white px-4 py-2 text-gray-900">
                         <button type="button" onClick={() => setShareImage(null)}>关闭</button>
                         <a href={shareImage.url} download={shareImage.file.name}>下载 JPG</a>
                         {navigator.canShare?.({ files: [shareImage.file] }) && (
@@ -6340,10 +6345,6 @@ export function ChatRoom({ session, onBack, onDeleted }: ChatRoomProps) {
                                 });
                             }}>保存或分享</button>
                         )}
-                    </div>
-                    {shareSaveError && <p role="alert" className="shrink-0 rounded-lg bg-white px-3 py-2 text-sm text-gray-900">系统分享失败，请使用「下载 JPG」。</p>}
-                    <div className="min-h-0 max-w-full overflow-auto">
-                        <img src={shareImage.url} alt="选中聊天记录的长图" className="h-auto w-full max-w-[480px]" />
                     </div>
                 </div>,
                 document.body,
